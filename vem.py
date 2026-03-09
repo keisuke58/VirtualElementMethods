@@ -47,7 +47,7 @@ def vem(mesh_file, rhs, boundary_condition):
 
     vertices = mesh['vertices']
 
-    elements = np.array([i[0].reshape(-1) - 1 for i in mesh['elements']])
+    elements = np.array([i[0].reshape(-1) - 1 for i in mesh['elements']], dtype=object)
 
     boundary = mesh['boundary'].T[0] - 1
 
@@ -62,7 +62,7 @@ def vem(mesh_file, rhs, boundary_condition):
 
     for el_id in range(elements.shape[0]):
 
-        vert_ids = elements[el_id]
+        vert_ids = elements[el_id].astype(int) if elements[el_id].dtype != np.int_ else elements[el_id]
 
         verts = vertices[vert_ids]
 
@@ -162,7 +162,7 @@ def plot_solution(mesh_file, u, save=False, plot_name=None):
     mesh = scipy.io.loadmat(mesh_file)
 
     vertices = mesh['vertices']
-    elements = np.array([i[0].reshape(-1) - 1 for i in mesh['elements']])
+    elements = np.array([i[0].reshape(-1) - 1 for i in mesh['elements']], dtype=object)
     boundary = mesh['boundary'].T[0] - 1
 
     x = vertices[:, 0]
