@@ -66,15 +66,33 @@ def make_interaction_matrix(condition='dh_baseline'):
     return A
 
 
-def hamilton_step(phi, A, dt=0.1):
+def hamilton_step(phi, A, dt=0.1, stress_feedback=0.0):
     """
     One step of replicator equation on the simplex.
-    dφ_i/dt = φ_i · [(Aφ)_i - φ^T A φ]
-    This preserves Σφ = 1 and drives species competition.
+    dφ_i/dt = φ_i · [(Aφ)_i - φ^T A φ] + stress_effect
+
+    Two-way coupling: mechanical stress modulates growth rates.
+    High stress suppresses growth of fragile (pathogenic) species
+    and favors robust (commensal) species.
+
+    Parameters
+    ----------
+    phi : (5,) species fractions
+    A : (5,5) interaction matrix
+    dt : time step
+    stress_feedback : scalar ≥ 0, von Mises stress magnitude (normalized)
+        Higher stress favors commensal species (index 0) over pathogenic (index 4)
+
     Uses RK2 (midpoint) for better stability.
     """
+    # Stress-dependent fitness modification:
+    # High stress → commensal advantage, pathogenic disadvantage
+    # Robustness weights: An=1.0, So=0.7, Vd=0.5, Fn=0.3, Pg=0.1
+    robustness = np.array([1.0, 0.7, 0.5, 0.3, 0.1])
+    stress_mod = stress_feedback * (robustness - 0.5) * 0.1
+
     def rhs(p):
-        fitness = A @ p
+        fitness = A @ p + stress_mod
         avg_fitness = p @ fitness
         return p * (fitness - avg_fitness)
 
@@ -291,14 +309,40 @@ class BiofilmGrowthVEM:
         self.n_cells = len(self.elements)
 
     def grow_step(self, dt=0.5, n_substeps=5):
-        """Advance species dynamics by dt (with n_substeps sub-intervals)."""
+        """
+        Advance species dynamics by dt (with n_substeps sub-intervals).
+
+        Two-way coupling: if self.u exists, compute per-cell stress
+        and feed back to hamilton_step. High stress suppresses pathogenic
+        species and favors commensal species.
+        """
         dt_sub = dt / n_substeps
+
+        # Compute per-cell stress feedback from displacement field
+        stress_per_cell = np.zeros(len(self.phi))
+        if hasattr(self, 'u') and self.u is not None and np.any(self.u != 0):
+            ux = self.u[0::2]
+            uy = self.u[1::2]
+            n_ux = len(ux)
+            for i in range(min(self.n_cells, len(self.valid_ids))):
+                cell_id = self.valid_ids[i]
+                if cell_id < len(self.phi):
+                    el = self.elements[i]
+                    el_int = el.astype(int)
+                    if np.any(el_int >= n_ux):
+                        continue
+                    # von Mises proxy: RMS displacement magnitude
+                    u_mag = np.sqrt(ux[el_int]**2 + uy[el_int]**2)
+                    stress_per_cell[cell_id] = np.mean(u_mag) * 100  # normalize
+
         for _ in range(n_substeps):
             for i in range(len(self.phi)):
                 cell_id = self.valid_ids[i] if i < len(self.valid_ids) else i
                 if cell_id < len(self.phi):
+                    sf = stress_per_cell[cell_id] if cell_id < len(stress_per_cell) else 0.0
                     self.phi[cell_id] = hamilton_step(
-                        self.phi[cell_id], self.A, dt=dt_sub)
+                        self.phi[cell_id], self.A, dt=dt_sub,
+                        stress_feedback=sf)
 
     def compute_properties(self):
         """Compute DI, E for all valid cells."""
