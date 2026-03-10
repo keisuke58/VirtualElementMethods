@@ -72,15 +72,143 @@ def manufactured_body_force(x, y, E=1000.0, nu=0.3):
     return fx, fy
 
 
+# ── Sutherland-Hodgman Polygon Clipping ─────────────────────────────────
+
+def _sh_clip_edge(polygon, edge_p1, edge_p2):
+    """Clip polygon against one edge using Sutherland-Hodgman.
+
+    The edge is defined by two points; the 'inside' is the left side
+    when walking from edge_p1 to edge_p2.
+    """
+    if len(polygon) == 0:
+        return []
+
+    def inside(p):
+        return (edge_p2[0] - edge_p1[0]) * (p[1] - edge_p1[1]) - \
+               (edge_p2[1] - edge_p1[1]) * (p[0] - edge_p1[0]) >= -1e-14
+
+    def intersection(p1, p2):
+        x1, y1 = p1
+        x2, y2 = p2
+        x3, y3 = edge_p1
+        x4, y4 = edge_p2
+        denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        if abs(denom) < 1e-15:
+            return p2  # parallel, return endpoint
+        t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
+        return (x1 + t * (x2 - x1), y1 + t * (y2 - y1))
+
+    output = []
+    for i in range(len(polygon)):
+        current = polygon[i]
+        prev = polygon[i - 1]
+        curr_in = inside(current)
+        prev_in = inside(prev)
+
+        if curr_in:
+            if not prev_in:
+                output.append(intersection(prev, current))
+            output.append(current)
+        elif prev_in:
+            output.append(intersection(prev, current))
+
+    return output
+
+
+def clip_polygon_to_box(polygon_verts, xmin, ymin, xmax, ymax):
+    """Clip a polygon to a bounding box using Sutherland-Hodgman algorithm.
+
+    Parameters
+    ----------
+    polygon_verts : array-like, shape (N, 2)
+        Vertices of the polygon (CCW or CW order).
+    xmin, ymin, xmax, ymax : float
+        Bounding box.
+
+    Returns
+    -------
+    clipped : ndarray, shape (M, 2) or empty
+        Clipped polygon vertices.
+    """
+    poly = [(v[0], v[1]) for v in polygon_verts]
+
+    # Four edges of the box (CCW so 'inside' is left):
+    # bottom: (xmin,ymin)->(xmax,ymin)
+    # right:  (xmax,ymin)->(xmax,ymax)
+    # top:    (xmax,ymax)->(xmin,ymax)
+    # left:   (xmin,ymax)->(xmin,ymin)
+    edges = [
+        ((xmin, ymin), (xmax, ymin)),  # bottom
+        ((xmax, ymin), (xmax, ymax)),  # right
+        ((xmax, ymax), (xmin, ymax)),  # top
+        ((xmin, ymax), (xmin, ymin)),  # left
+    ]
+
+    for e1, e2 in edges:
+        poly = _sh_clip_edge(poly, e1, e2)
+        if len(poly) == 0:
+            return np.empty((0, 2))
+
+    if len(poly) < 3:
+        return np.empty((0, 2))
+
+    result = np.array(poly)
+
+    # Ensure CCW ordering (VEM expects CCW)
+    signed_area = 0.0
+    n = len(result)
+    for i in range(n):
+        j = (i + 1) % n
+        signed_area += result[i, 0] * result[j, 1] - result[j, 0] * result[i, 1]
+    if signed_area < 0:
+        result = result[::-1]
+
+    return result
+
+
 # ── Voronoi Mesh Generation ─────────────────────────────────────────────
 
-def generate_voronoi_mesh(n_per_side, Lx=1.0, Ly=1.0, seed=42, perturbation=0.3):
-    """
-    Generate a perturbed-grid Voronoi mesh on [0,Lx]×[0,Ly].
+def _lloyd_relaxation(seeds, Lx, Ly, n_iter=4):
+    """Lloyd relaxation: move seeds to Voronoi cell centroids."""
+    for _ in range(n_iter):
+        # Mirror seeds for bounded Voronoi
+        all_pts = [seeds]
+        for axis, bounds in [(0, [0.0, Lx]), (1, [0.0, Ly])]:
+            for val in bounds:
+                mirror = seeds.copy()
+                mirror[:, axis] = 2 * val - mirror[:, axis]
+                all_pts.append(mirror)
+        all_pts = np.vstack(all_pts)
+        vor = Voronoi(all_pts)
+        n_seeds = len(seeds)
 
-    Uses a regular grid with random perturbation as seeds, then constructs
-    a bounded Voronoi diagram using mirror points. This ensures no
-    degenerate boundary clipping issues.
+        new_seeds = seeds.copy()
+        for i in range(n_seeds):
+            region_idx = vor.point_region[i]
+            region = vor.regions[region_idx]
+            if -1 in region or len(region) < 3:
+                continue
+            verts = vor.vertices[region]
+            clipped = clip_polygon_to_box(verts, 0, 0, Lx, Ly)
+            if len(clipped) < 3:
+                continue
+            # Centroid of clipped polygon
+            new_seeds[i] = clipped.mean(axis=0)
+
+        # Keep seeds inside domain
+        new_seeds[:, 0] = np.clip(new_seeds[:, 0], 0.01 * Lx / n_seeds, Lx * (1 - 0.01 / n_seeds))
+        new_seeds[:, 1] = np.clip(new_seeds[:, 1], 0.01 * Ly / n_seeds, Ly * (1 - 0.01 / n_seeds))
+        seeds = new_seeds
+    return seeds
+
+
+def generate_voronoi_mesh(n_per_side, Lx=1.0, Ly=1.0, seed=42, perturbation=0.3,
+                          lloyd_iter=4):
+    """
+    Generate a perturbed-grid Voronoi mesh on [0,Lx]x[0,Ly].
+
+    Uses Sutherland-Hodgman polygon clipping (not np.clip on vertices)
+    and Lloyd relaxation for mesh quality.
     """
     rng = np.random.default_rng(seed)
     h = Lx / n_per_side
@@ -95,6 +223,11 @@ def generate_voronoi_mesh(n_per_side, Lx=1.0, Ly=1.0, seed=42, perturbation=0.3)
             cy = np.clip(cy, 0.05 * h, Ly - 0.05 * h)
             seeds.append([cx, cy])
     seeds = np.array(seeds)
+
+    # Lloyd relaxation to improve mesh quality
+    if lloyd_iter > 0:
+        seeds = _lloyd_relaxation(seeds, Lx, Ly, n_iter=lloyd_iter)
+
     n_seeds = len(seeds)
 
     # Mirror for bounded Voronoi
@@ -107,10 +240,8 @@ def generate_voronoi_mesh(n_per_side, Lx=1.0, Ly=1.0, seed=42, perturbation=0.3)
     all_pts = np.vstack(all_pts)
     vor = Voronoi(all_pts)
 
-    # Extract bounded cells
-    elements = []
-    used_verts = set()
-
+    # Extract and clip cells using Sutherland-Hodgman
+    clipped_polys = []
     for i in range(n_seeds):
         region_idx = vor.point_region[i]
         region = vor.regions[region_idx]
@@ -119,48 +250,51 @@ def generate_voronoi_mesh(n_per_side, Lx=1.0, Ly=1.0, seed=42, perturbation=0.3)
             continue
 
         verts = vor.vertices[region]
-        # Clip vertices to domain
-        verts[:, 0] = np.clip(verts[:, 0], 0, Lx)
-        verts[:, 1] = np.clip(verts[:, 1], 0, Ly)
+        clipped = clip_polygon_to_box(verts, 0, 0, Lx, Ly)
+        if len(clipped) < 3:
+            continue
+        clipped_polys.append(clipped)
 
-        elements.append(np.array(region))
-        for vi in region:
-            used_verts.add(vi)
-
-    # Compact indexing
-    used_sorted = sorted(used_verts)
-    old_to_new = {old: new for new, old in enumerate(used_sorted)}
-    vertices = vor.vertices[used_sorted].copy()
-    vertices[:, 0] = np.clip(vertices[:, 0], 0, Lx)
-    vertices[:, 1] = np.clip(vertices[:, 1], 0, Ly)
-    elements_compact = [np.array([old_to_new[vi] for vi in el]) for el in elements]
-
-    # Merge duplicate vertices (from clipping)
-    # Round to avoid floating point duplicates
+    # Build compact vertex array, merging duplicates within tolerance
     tol_merge = 1e-10
-    unique_map = {}
-    new_vertices = []
-    old_to_merged = {}
-    for i, v in enumerate(vertices):
-        key = (round(v[0] / tol_merge), round(v[1] / tol_merge))
-        if key not in unique_map:
-            unique_map[key] = len(new_vertices)
-            new_vertices.append(v)
-        old_to_merged[i] = unique_map[key]
+    unique_map = {}  # (rounded_x, rounded_y) -> vertex index
+    all_vertices = []
+    elements_compact = []
 
-    vertices = np.array(new_vertices)
-    elements_compact = [np.array([old_to_merged[vi] for vi in el]) for el in elements_compact]
+    for poly in clipped_polys:
+        el_indices = []
+        for v in poly:
+            key = (round(v[0] / tol_merge), round(v[1] / tol_merge))
+            if key not in unique_map:
+                unique_map[key] = len(all_vertices)
+                all_vertices.append(v.copy())
+            el_indices.append(unique_map[key])
+        el_indices = np.array(el_indices, dtype=int)
 
-    # Remove degenerate elements (< 3 unique vertices or zero area)
+        # Remove consecutive duplicate indices
+        mask = np.concatenate([[True], el_indices[1:] != el_indices[:-1]])
+        # Also check wrap-around
+        if len(el_indices) > 1 and el_indices[-1] == el_indices[0]:
+            mask[-1] = False
+        el_indices = el_indices[mask]
+
+        if len(el_indices) >= 3:
+            elements_compact.append(el_indices)
+
+    vertices = np.array(all_vertices)
+
+    # Remove degenerate elements (area < tol or < 3 unique vertices)
     good_elements = []
     for el in elements_compact:
         unique_verts = np.unique(el)
         if len(unique_verts) < 3:
             continue
-        verts_el = vertices[unique_verts]
-        ac = verts_el[:, 0] * np.roll(verts_el[:, 1], -1) - np.roll(verts_el[:, 0], -1) * verts_el[:, 1]
+        verts_el = vertices[el]
+        # Shoelace area (preserving vertex order from clipping)
+        ac = verts_el[:, 0] * np.roll(verts_el[:, 1], -1) - \
+             np.roll(verts_el[:, 0], -1) * verts_el[:, 1]
         if abs(ac.sum()) > 1e-14:
-            good_elements.append(unique_verts)
+            good_elements.append(el)
     elements_compact = good_elements
 
     # Boundary nodes
@@ -502,11 +636,19 @@ def convergence_study_fem_quad(n_per_sides=None, E=1000.0, nu=0.3):
 # ── Plotting ─────────────────────────────────────────────────────────────
 
 def plot_convergence(all_results, save_path=None):
-    """Plot convergence comparison: VEM (Voronoi/Quad) vs FEM (Triangle)."""
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    """Plot convergence comparison: VEM (Voronoi/Quad) vs FEM (Triangle).
+    Paper-quality version with LaTeX-style labels."""
+    plt.rcParams.update({
+        'font.size': 11, 'axes.labelsize': 12, 'axes.titlesize': 13,
+        'legend.fontsize': 9, 'xtick.labelsize': 10, 'ytick.labelsize': 10,
+        'font.family': 'serif', 'mathtext.fontset': 'cm',
+    })
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
 
     markers = {'VEM-Voronoi': 'o', 'FEM-Triangle': 's', 'VEM-Quad': 'D'}
-    colors = {'VEM-Voronoi': '#2196F3', 'FEM-Triangle': '#F44336', 'VEM-Quad': '#4CAF50'}
+    colors = {'VEM-Voronoi': '#1565C0', 'FEM-Triangle': '#C62828', 'VEM-Quad': '#2E7D32'}
+    labels = {'VEM-Voronoi': 'VEM (Voronoi)', 'FEM-Triangle': 'FEM (Triangle)',
+              'VEM-Quad': 'VEM (Quad)'}
 
     for method in ['VEM-Voronoi', 'FEM-Triangle', 'VEM-Quad']:
         res = [r for r in all_results if r['method'] == method]
@@ -518,106 +660,124 @@ def plot_convergence(all_results, save_path=None):
         times = np.array([r['time'] for r in res])
         n_dofs = np.array([2 * r['n_nodes'] for r in res])
 
-        # Convergence rates
         if len(h) >= 2:
             l2_rate = np.polyfit(np.log(h), np.log(l2), 1)[0]
             h1_rate = np.polyfit(np.log(h), np.log(h1), 1)[0]
         else:
             l2_rate = h1_rate = 0
 
-        # L2 error
         axes[0].loglog(h, l2, f'-{markers[method]}', color=colors[method],
-                       label=f'{method} (rate={l2_rate:.2f})', linewidth=2, markersize=8)
-
-        # H1 error
+                       label=f'{labels[method]} ($r={l2_rate:.2f}$)',
+                       linewidth=1.8, markersize=7, markeredgecolor='white',
+                       markeredgewidth=0.5)
         axes[1].loglog(h, h1, f'-{markers[method]}', color=colors[method],
-                       label=f'{method} (rate={h1_rate:.2f})', linewidth=2, markersize=8)
-
-        # Time vs DOFs
+                       label=f'{labels[method]} ($r={h1_rate:.2f}$)',
+                       linewidth=1.8, markersize=7, markeredgecolor='white',
+                       markeredgewidth=0.5)
         axes[2].loglog(n_dofs, times, f'-{markers[method]}', color=colors[method],
-                       label=method, linewidth=2, markersize=8)
+                       label=labels[method], linewidth=1.8, markersize=7,
+                       markeredgecolor='white', markeredgewidth=0.5)
 
-    # Reference slopes
-    h_ref = np.array([0.03, 0.3])
-    axes[0].loglog(h_ref, 0.5 * h_ref**2, 'k--', alpha=0.3, label='O(h²)')
-    axes[1].loglog(h_ref, 2.0 * h_ref**1, 'k--', alpha=0.3, label='O(h)')
+    # Reference slopes with triangles
+    h_ref = np.array([0.04, 0.25])
+    axes[0].loglog(h_ref, 0.3 * h_ref**2, 'k--', alpha=0.4, linewidth=1)
+    axes[0].text(0.07, 0.3 * 0.07**2 * 1.5, '$O(h^2)$', fontsize=9, alpha=0.6)
+    axes[1].loglog(h_ref, 1.5 * h_ref**1, 'k--', alpha=0.4, linewidth=1)
+    axes[1].text(0.07, 1.5 * 0.07 * 1.3, '$O(h)$', fontsize=9, alpha=0.6)
 
-    axes[0].set_xlabel('h (mesh size)')
-    axes[0].set_ylabel('L² error')
-    axes[0].set_title('L² Convergence')
-    axes[0].legend(fontsize=8)
-    axes[0].grid(True, alpha=0.3)
+    axes[0].set_xlabel('$h$ (mesh size)')
+    axes[0].set_ylabel('$\\|u - u_h\\|_{L^2}$')
+    axes[0].set_title('(a) $L^2$ convergence')
+    axes[0].legend(framealpha=0.9, edgecolor='0.8')
+    axes[0].grid(True, alpha=0.2, which='both')
 
-    axes[1].set_xlabel('h (mesh size)')
-    axes[1].set_ylabel('H¹ seminorm error')
-    axes[1].set_title('H¹ Convergence')
-    axes[1].legend(fontsize=8)
-    axes[1].grid(True, alpha=0.3)
+    axes[1].set_xlabel('$h$ (mesh size)')
+    axes[1].set_ylabel('$|u - u_h|_{H^1}$')
+    axes[1].set_title('(b) $H^1$ convergence')
+    axes[1].legend(framealpha=0.9, edgecolor='0.8')
+    axes[1].grid(True, alpha=0.2, which='both')
 
     axes[2].set_xlabel('DOFs')
     axes[2].set_ylabel('Time [s]')
-    axes[2].set_title('Computational Cost')
-    axes[2].legend(fontsize=8)
-    axes[2].grid(True, alpha=0.3)
+    axes[2].set_title('(c) Computational cost')
+    axes[2].legend(framealpha=0.9, edgecolor='0.8')
+    axes[2].grid(True, alpha=0.2, which='both')
 
-    fig.suptitle('VEM vs FEM: h-Convergence with Manufactured Solution',
-                fontsize=14, fontweight='bold')
+    for ax in axes:
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"\nSaved: {save_path}")
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        # Also save PDF for paper
+        plt.savefig(save_path.replace('.png', '.pdf'), bbox_inches='tight')
+        print(f"\nSaved: {save_path} (+ PDF)")
     plt.close()
+    plt.rcParams.update(plt.rcParamsDefault)
 
 
 def plot_mesh_comparison(save_path=None):
-    """Visualize the three mesh types used in the convergence study."""
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    """Visualize the three mesh types used in the convergence study (paper quality)."""
+    from matplotlib.collections import PolyCollection
+    plt.rcParams.update({
+        'font.size': 11, 'axes.labelsize': 12, 'axes.titlesize': 13,
+        'font.family': 'serif', 'mathtext.fontset': 'cm',
+    })
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
+
+    mesh_colors = ['#1565C0', '#C62828', '#2E7D32']
+    fill_colors = ['#E3F2FD', '#FFEBEE', '#E8F5E9']
+    titles = ['(a) VEM (Voronoi)', '(b) FEM (Triangle)', '(c) VEM (Quad)']
 
     # Voronoi
-    verts_v, elems_v, _ = generate_voronoi_mesh(8, seed=42)
-    ax = axes[0]
-    for el in elems_v:
-        poly = verts_v[el]
-        poly_closed = np.vstack([poly, poly[0]])
-        ax.plot(poly_closed[:, 0], poly_closed[:, 1], 'b-', linewidth=0.5)
-    ax.set_title(f'VEM-Voronoi ({len(elems_v)} cells)')
-    ax.set_aspect('equal')
-    ax.set_xlim(-0.05, 1.05)
-    ax.set_ylim(-0.05, 1.05)
+    verts_v, elems_v, bnd_v = generate_voronoi_mesh(8, seed=42)
+    polys_v = [verts_v[el] for el in elems_v]
+    pc = PolyCollection(polys_v, facecolors=fill_colors[0], edgecolors=mesh_colors[0],
+                        linewidths=0.6)
+    axes[0].add_collection(pc)
+    axes[0].plot(verts_v[bnd_v, 0], verts_v[bnd_v, 1], '.', color='#E65100',
+                 markersize=3, zorder=5, label='Boundary nodes')
+    axes[0].set_title(f'{titles[0]}\n$n_e = {len(elems_v)}$, $n_v = {len(verts_v)}$')
 
     # Triangles
     verts_t, elems_t, _ = generate_triangle_mesh(8)
-    ax = axes[1]
-    for el in elems_t:
-        poly = verts_t[el]
-        poly_closed = np.vstack([poly, poly[0]])
-        ax.plot(poly_closed[:, 0], poly_closed[:, 1], 'r-', linewidth=0.5)
-    ax.set_title(f'FEM-Triangle ({len(elems_t)} cells)')
-    ax.set_aspect('equal')
-    ax.set_xlim(-0.05, 1.05)
-    ax.set_ylim(-0.05, 1.05)
+    polys_t = [verts_t[el] for el in elems_t]
+    pc = PolyCollection(polys_t, facecolors=fill_colors[1], edgecolors=mesh_colors[1],
+                        linewidths=0.6)
+    axes[1].add_collection(pc)
+    axes[1].set_title(f'{titles[1]}\n$n_e = {len(elems_t)}$, $n_v = {len(verts_t)}$')
 
     # Quads
     n = 8
-    ax = axes[2]
+    polys_q = []
     for j in range(n):
         for i in range(n):
             x0, y0 = i / n, j / n
-            rect = plt.Rectangle((x0, y0), 1/n, 1/n,
-                                fill=False, edgecolor='green', linewidth=0.5)
-            ax.add_patch(rect)
-    ax.set_title(f'VEM-Quad ({n*n} cells)')
-    ax.set_aspect('equal')
-    ax.set_xlim(-0.05, 1.05)
-    ax.set_ylim(-0.05, 1.05)
+            polys_q.append(np.array([[x0, y0], [x0+1/n, y0],
+                                     [x0+1/n, y0+1/n], [x0, y0+1/n]]))
+    pc = PolyCollection(polys_q, facecolors=fill_colors[2], edgecolors=mesh_colors[2],
+                        linewidths=0.6)
+    axes[2].add_collection(pc)
+    axes[2].set_title(f'{titles[2]}\n$n_e = {n*n}$, $n_v = {(n+1)**2}$')
 
-    fig.suptitle('Mesh Types for Convergence Study', fontsize=14, fontweight='bold')
+    for ax in axes:
+        ax.set_aspect('equal')
+        ax.set_xlim(-0.02, 1.02)
+        ax.set_ylim(-0.02, 1.02)
+        ax.set_xlabel('$x$')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+    axes[0].set_ylabel('$y$')
+
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Saved: {save_path}")
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path.replace('.png', '.pdf'), bbox_inches='tight')
+        print(f"Saved: {save_path} (+ PDF)")
     plt.close()
+    plt.rcParams.update(plt.rcParamsDefault)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────
@@ -631,6 +791,9 @@ if __name__ == '__main__':
     print("Manufactured solution: u = (sin(pi*x)sin(pi*y), cos(pi*x)cos(pi*y))")
     print("=" * 60)
 
+    print("\n--- VEM on Voronoi meshes (Sutherland-Hodgman clipping) ---")
+    voronoi_results = convergence_study_vem([4, 6, 8, 12, 16, 24])
+
     print("\n--- VEM on quadrilateral meshes ---")
     quad_results = convergence_study_fem_quad([4, 6, 8, 12, 16, 24])
 
@@ -640,7 +803,7 @@ if __name__ == '__main__':
     print("\n--- VEM on .mat Voronoi mesh (single point) ---")
     mat_results = convergence_study_mat_meshes(1000.0, 0.3)
 
-    all_results = quad_results + fem_results + mat_results
+    all_results = voronoi_results + quad_results + fem_results + mat_results
 
     # Convergence rates
     print("\n" + "=" * 60)
