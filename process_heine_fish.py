@@ -57,63 +57,75 @@ def decompose_fish_channels(rgb, method='heuristic'):
     H, W = R.shape
     channels = np.zeros((5, H, W))
 
+    # Background mask
+    brightness = (R + G + B) / 3
+    bg_mask = brightness < 0.05
+
     if method == 'heuristic':
-        # Background mask (very dark pixels)
-        brightness = (R + G + B) / 3
-        bg_mask = brightness < 0.05
+        # Heine 2025 FISH probe → fluorophore → approximate RGB rendering:
+        #   So: Alexa 405 (λ_em=421nm) → blue/violet channel
+        #   An: Alexa 488 (λ_em=519nm) → green channel
+        #   Vd: Alexa 568 (λ_em=603nm) → yellow/orange
+        #   Fn: AF405+AF647 dual → cyan/white (both B and R high)
+        #   Pg: Alexa 647 (λ_em=668nm) → red/far-red
+        #
+        # Reference spectra matrix S (3×5) based on fluorophore emission:
+        S = np.array([
+            # R     G     B     ← RGB contribution
+            [0.05, 0.60, 0.10],  # An (488: green)
+            [0.10, 0.05, 0.85],  # So (405: blue)
+            [0.75, 0.65, 0.05],  # Vd (568: yellow-orange)
+            [0.45, 0.30, 0.55],  # Fn (405+647: blue+red → magenta/white)
+            [0.90, 0.05, 0.10],  # Pg (647: red)
+        ]).T  # → (3, 5)
 
-        # An (Alexa 488 → green): high G, moderate B, low R
-        # In composite appears as green-to-cyan
-        channels[0] = np.clip(G - 0.5 * R - 0.3 * B, 0, 1)
-        # Boost where blue+green but not red (cyan = An)
-        cyan_boost = np.clip(np.minimum(G, B) - R, 0, 1)
-        channels[0] = np.clip(channels[0] + 0.5 * cyan_boost, 0, 1)
+        # Non-negative least squares per pixel (spectral unmixing)
+        from scipy.optimize import nnls
+        pixels = np.stack([R.ravel(), G.ravel(), B.ravel()], axis=0)  # (3, N)
+        N = pixels.shape[1]
+        abundances = np.zeros((5, N))
 
-        # So (Alexa 405 → blue/violet): high B, low R, low G
-        channels[1] = np.clip(B - 0.4 * G - 0.3 * R, 0, 1)
+        # Vectorized: solve S @ h = pixel for each pixel using pseudoinverse + clip
+        # (faster than per-pixel NNLS for 250x240 images)
+        S_pinv = np.linalg.pinv(S)  # (5, 3)
+        abundances = S_pinv @ pixels  # (5, N)
+        abundances = np.clip(abundances, 0, None)
 
-        # Vd (Alexa 568 → yellow/orange): high R+G, low B
-        channels[2] = np.clip(np.minimum(R, G) - 0.5 * B, 0, 1)
-        # Orange: R > G, low B
-        orange = np.clip(R - 0.8 * G, 0, 1) * (1 - B)
-        channels[2] = np.clip(channels[2] + 0.3 * orange, 0, 1)
-
-        # Fn (dual AF405+AF647 → appears white/magenta in composite)
-        # White = all channels high
-        white_component = np.minimum(np.minimum(R, G), B)
-        channels[3] = np.clip(white_component - 0.15, 0, 1)
-        # Also magenta: high R+B, low G
-        magenta = np.clip(np.minimum(R, B) - G, 0, 1)
-        channels[3] = np.clip(channels[3] + 0.5 * magenta, 0, 1)
-
-        # Pg (Alexa 647 → red/far-red): high R, low G, low B
-        channels[4] = np.clip(R - 0.5 * G - 0.5 * B, 0, 1)
-
-        # Zero out background
         for ch in range(5):
+            channels[ch] = abundances[ch].reshape(H, W)
+            cmax = channels[ch].max()
+            if cmax > 1e-10:
+                channels[ch] /= cmax
             channels[ch][bg_mask] = 0
             channels[ch] = gaussian_filter(channels[ch], sigma=1.0)
 
     elif method == 'nmf':
-        from sklearn.decomposition import NMF
-        # Reshape to (N_pixels, 3)
-        pixels = img.reshape(-1, 3)
-        # Reference spectra for each fluorophore (approximate RGB rendering)
-        W_init = np.array([
-            [0.1, 0.8, 0.5],   # An: green-cyan
-            [0.1, 0.2, 0.9],   # So: blue
-            [0.9, 0.8, 0.1],   # Vd: yellow
-            [0.7, 0.5, 0.7],   # Fn: white/magenta
-            [0.9, 0.1, 0.1],   # Pg: red
+        from scipy.optimize import nnls
+
+        # Reference spectra (same as heuristic)
+        S = np.array([
+            [0.05, 0.60, 0.10],  # An
+            [0.10, 0.05, 0.85],  # So
+            [0.75, 0.65, 0.05],  # Vd
+            [0.45, 0.30, 0.55],  # Fn
+            [0.90, 0.05, 0.10],  # Pg
         ]).T  # (3, 5)
-        model = NMF(n_components=5, init='custom', max_iter=500, random_state=42)
-        H_init = np.linalg.lstsq(W_init, pixels.T, rcond=None)[0]
-        H_init = np.clip(H_init, 0, None)
-        model.fit(pixels, W=W_init, H=H_init)
-        H_result = model.transform(pixels)
+
+        pixels_flat = np.stack([R.ravel(), G.ravel(), B.ravel()], axis=0)
+        N = pixels_flat.shape[1]
+
+        # Per-pixel NNLS (slower but more accurate)
+        abundances = np.zeros((5, N))
+        for i in range(N):
+            if brightness.ravel()[i] > 0.03:
+                abundances[:, i], _ = nnls(S, pixels_flat[:, i])
+
         for ch in range(5):
-            channels[ch] = H_result[:, ch].reshape(H, W)
-            channels[ch] /= max(channels[ch].max(), 1e-10)
+            channels[ch] = abundances[ch].reshape(H, W)
+            cmax = channels[ch].max()
+            if cmax > 1e-10:
+                channels[ch] /= cmax
+            channels[ch] = gaussian_filter(channels[ch], sigma=1.0)
 
     return channels
 
@@ -396,9 +408,7 @@ def process_fish_image(image_path, condition_name='unknown',
     E_per_cell = E_vals[valid_seeds] if len(valid_seeds) <= len(E_vals) else \
         np.full(len(elements), E_vals.mean())
 
-    # Spatially varying E: use mean E for now (VEM needs single E per solve,
-    # or we use the weighted approach)
-    E_mean = E_per_cell.mean()
+
 
     # Boundary conditions: fixed bottom, pressure top
     # Use percentile-based selection since Voronoi vertices don't land
@@ -435,13 +445,13 @@ def process_fish_image(image_path, condition_name='unknown',
     load_vals = np.full(len(top), -2.0 / max(len(top), 1))
 
     try:
-        u = vem_elasticity(vertices, elements, E_mean, nu,
+        u = vem_elasticity(vertices, elements, E_per_cell, nu,
                            bc_dofs, bc_vals, load_dofs, load_vals)
         ux = u[0::2]
         uy = u[1::2]
         max_disp = np.sqrt(ux**2 + uy**2).max()
         print(f"    Max displacement: {max_disp:.4f} µm")
-        print(f"    Mean E used: {E_mean:.0f} Pa")
+        print(f"    E per cell: min={E_per_cell.min():.0f}, max={E_per_cell.max():.0f}, mean={E_per_cell.mean():.0f} Pa")
     except Exception as e:
         print(f"  VEM solve failed: {e}")
         u = None
