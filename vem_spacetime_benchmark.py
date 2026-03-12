@@ -28,6 +28,106 @@ from vem_elasticity import (vem_elasticity, assemble_mass_matrix,
                             vem_elastodynamics)
 
 
+# ── Helper Functions ─────────────────────────────────────────────────────
+
+def compute_convergence_rate(h_vals, errors):
+    """Log-log regression for convergence rate. Returns (rate, R²)."""
+    if len(h_vals) < 2 or any(e <= 0 for e in errors):
+        return 0.0, 0.0
+    log_h = np.log(np.array(h_vals))
+    log_e = np.log(np.array(errors))
+    coeffs = np.polyfit(log_h, log_e, 1)
+    rate = coeffs[0]
+    # R²
+    pred = np.polyval(coeffs, log_h)
+    ss_res = np.sum((log_e - pred)**2)
+    ss_tot = np.sum((log_e - np.mean(log_e))**2)
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return rate, r2
+
+
+def pairwise_rates(h_vals, errors):
+    """Pairwise convergence rates between successive refinements."""
+    rates = []
+    for i in range(len(errors) - 1):
+        if errors[i] > 0 and errors[i+1] > 0 and h_vals[i] != h_vals[i+1]:
+            r = np.log(errors[i] / errors[i+1]) / np.log(h_vals[i] / h_vals[i+1])
+            rates.append(r)
+        else:
+            rates.append(float('nan'))
+    return rates
+
+
+def compute_spacetime_errors(vertices, elements, u_h, u_exact_func,
+                             grad_exact_func=None, C_tensor=None):
+    """
+    Compute L², H¹ semi-norm, and energy norm errors for scalar space-time VEM.
+
+    Parameters
+    ----------
+    vertices : (N, 2) node coords
+    elements : list of int arrays
+    u_h : (N,) numerical solution
+    u_exact_func : callable(x, t) → u
+    grad_exact_func : callable(x, t) → (du/dx, du/dt), optional
+    C_tensor : (2, 2) material tensor for energy norm, optional
+
+    Returns
+    -------
+    dict with keys 'L2', 'H1', 'energy'
+    """
+    l2_err2, h1_err2, energy_err2 = 0.0, 0.0, 0.0
+    total_area = 0.0
+
+    for el in elements:
+        el_int = el.astype(int)
+        verts = vertices[el_int]
+        n_v = len(el_int)
+
+        # Element area (shoelace)
+        area_comp = (verts[:, 0] * np.roll(verts[:, 1], -1)
+                     - np.roll(verts[:, 0], -1) * verts[:, 1])
+        area = 0.5 * abs(np.sum(area_comp))
+        if area < 1e-15:
+            continue
+        total_area += area
+
+        cx = np.mean(verts[:, 0])
+        ct = np.mean(verts[:, 1])
+
+        # L² error: |u_h(centroid) - u_exact(centroid)|² * area
+        u_h_c = np.mean(u_h[el_int])
+        u_ex_c = u_exact_func(cx, ct)
+        l2_err2 += (u_h_c - u_ex_c)**2 * area
+
+        # H¹ semi-norm: |∇u_h - ∇u_exact|² * area
+        if grad_exact_func is not None and n_v >= 3:
+            # Approximate ∇u_h via least-squares on element vertices
+            A_ls = np.column_stack([verts[:, 0] - cx, verts[:, 1] - ct,
+                                    np.ones(n_v)])
+            vals = u_h[el_int]
+            try:
+                coeffs, _, _, _ = np.linalg.lstsq(A_ls, vals, rcond=None)
+                grad_h = coeffs[:2]  # (du/dx, du/dt)
+            except np.linalg.LinAlgError:
+                grad_h = np.zeros(2)
+
+            grad_ex = np.array(grad_exact_func(cx, ct))
+            diff_grad = grad_h - grad_ex
+            h1_err2 += np.dot(diff_grad, diff_grad) * area
+
+            # Energy norm: (C · (∇u_h - ∇u_exact)) · (∇u_h - ∇u_exact) * area
+            if C_tensor is not None:
+                energy_err2 += np.dot(C_tensor @ diff_grad, diff_grad) * area
+
+    return {
+        'L2': np.sqrt(l2_err2),
+        'H1': np.sqrt(h1_err2),
+        'energy': np.sqrt(energy_err2),
+        'area': total_area,
+    }
+
+
 # ── Benchmark 1: Wave Equation ───────────────────────────────────────────
 
 def benchmark_wave(save_dir='/tmp'):
@@ -47,7 +147,7 @@ def benchmark_wave(save_dir='/tmp'):
     Lx, T = 1.0, 1.0
 
     # Convergence study: refine mesh
-    mesh_sizes = [(8, 10), (12, 15), (20, 25), (30, 40)]
+    mesh_sizes = [(6, 8), (8, 10), (12, 15), (16, 20)]
     errors = []
     n_dofs_list = []
 
@@ -97,9 +197,10 @@ def benchmark_wave(save_dir='/tmp'):
 
     # Convergence rate
     h_vals = 1.0 / np.sqrt(np.array(n_dofs_list))
-    if len(errors) > 1:
-        rates = np.diff(np.log(errors)) / np.diff(np.log(h_vals))
-        print(f"  Convergence rates: {[f'{r:.2f}' for r in rates]}")
+    pw_rates = pairwise_rates(h_vals, errors)
+    rate_L2, r2_L2 = compute_convergence_rate(h_vals, errors)
+    print(f"  Pairwise rates: {[f'{r:.2f}' for r in pw_rates]}")
+    print(f"  Regression rate: {rate_L2:.2f} (R²={r2_L2:.3f})")
 
     # Plot
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
@@ -143,11 +244,13 @@ def benchmark_wave(save_dir='/tmp'):
     ax.set_title('|Error|')
     fig.colorbar(pc2, ax=ax, label='|e|')
 
-    # 3. Convergence
+    # 3. Convergence with theoretical lines
     ax = axes[2]
-    ax.loglog(h_vals, errors, 'bo-', label='VEM')
-    ax.loglog(h_vals, errors[0] * (h_vals / h_vals[0])**1, 'k--', alpha=0.5, label='O(h¹)')
-    ax.loglog(h_vals, errors[0] * (h_vals / h_vals[0])**2, 'k:', alpha=0.5, label='O(h²)')
+    ax.loglog(h_vals, errors, 'bo-', label=f'VEM L² (rate={rate_L2:.2f})', linewidth=2)
+    ax.loglog(h_vals, errors[0] * (h_vals / h_vals[0])**1, 'k--', alpha=0.5,
+              label='O(h¹) [Xu/Wriggers]')
+    ax.loglog(h_vals, errors[0] * (h_vals / h_vals[0])**2, 'k:', alpha=0.5,
+              label='O(h²) [Xu/Wriggers]')
     ax.set_xlabel('h (mesh size)')
     ax.set_ylabel('L² error')
     ax.set_title('Convergence')
@@ -161,7 +264,14 @@ def benchmark_wave(save_dir='/tmp'):
     print(f"  Saved: {path}")
     plt.close()
 
-    return errors, h_vals
+    return {
+        'problem': 'Wave',
+        'h': h_vals.tolist(),
+        'dofs': n_dofs_list,
+        'L2': errors,
+        'rate_L2': rate_L2,
+        'r2_L2': r2_L2,
+    }
 
 
 # ── Benchmark 2: SLS Relaxation (analytical comparison) ─────────────────
@@ -452,21 +562,275 @@ def benchmark_elastodynamics(save_dir='/tmp'):
     return t_hist, u_hist
 
 
+# ── Benchmark 5: Manufactured Solution (quantitative C5) ─────────────────
+
+def benchmark_manufactured(save_dir='/tmp'):
+    """
+    Manufactured solution on (x,t) ∈ [0,1]² for quantitative convergence.
+
+    Exact: u(x,t) = sin(πx) · exp(-t)
+    With C = [[κ, 0], [0, β]], the PDE is:
+        -div(C · ∇u) = f(x,t)
+        f = κ·π²·sin(πx)·exp(-t) + β·sin(πx)·exp(-t)
+          = (κ·π² + β) · sin(πx) · exp(-t)
+
+    This gives well-defined L², H¹, and energy norm convergence.
+    Expected (k=1 VEM): L² ~ O(h²), H¹ ~ O(h), energy ~ O(h).
+    """
+    print("\n" + "=" * 60)
+    print("Benchmark 5: Manufactured Solution (C5 quantitative)")
+    print("=" * 60)
+
+    kappa, beta = 1.0, 0.5
+    C = np.array([[kappa, 0.0], [0.0, beta]])
+    Lx, T = 1.0, 1.0
+
+    def u_exact(x, t):
+        return np.sin(np.pi * x) * np.exp(-t)
+
+    def grad_exact(x, t):
+        return (np.pi * np.cos(np.pi * x) * np.exp(-t),
+                -np.sin(np.pi * x) * np.exp(-t))
+
+    def rhs(x, t):
+        return (kappa * np.pi**2 + beta) * np.sin(np.pi * x) * np.exp(-t)
+
+    mesh_configs = [(6, 6), (8, 8), (12, 12), (16, 16), (20, 20)]
+    results = {'h': [], 'dofs': [], 'L2': [], 'H1': [], 'energy': []}
+
+    for nx, nt in mesh_configs:
+        vertices, elements, boundary = make_spacetime_voronoi(
+            nx_seeds=nx, nt_seeds=nt, Lx=Lx, T=T, seed=42)
+        n_cells = len(elements)
+        C_per_el = np.tile(C, (n_cells, 1, 1))
+
+        # BCs: all boundary nodes get exact values
+        bc_nodes = np.unique(np.concatenate([
+            boundary['bottom'], boundary['top'],
+            boundary['left'], boundary['right']]))
+        bc_vals = np.array([u_exact(vertices[n, 0], vertices[n, 1])
+                            for n in bc_nodes])
+
+        u = vem_anisotropic(vertices, elements, C_per_el, bc_nodes, bc_vals,
+                            rhs_func=rhs)
+
+        # Effective h
+        h_eff = 1.0 / np.sqrt(len(elements))
+
+        # Compute all error norms
+        errs = compute_spacetime_errors(
+            vertices, elements, u, u_exact, grad_exact, C)
+
+        results['h'].append(h_eff)
+        results['dofs'].append(vertices.shape[0])
+        results['L2'].append(errs['L2'])
+        results['H1'].append(errs['H1'])
+        results['energy'].append(errs['energy'])
+
+        print(f"  {nx}×{nt}: {vertices.shape[0]} DOFs, h={h_eff:.4f}, "
+              f"L²={errs['L2']:.4e}, H¹={errs['H1']:.4e}, E={errs['energy']:.4e}")
+
+    h = np.array(results['h'])
+
+    # Regression rates
+    rate_L2, r2_L2 = compute_convergence_rate(h, results['L2'])
+    rate_H1, r2_H1 = compute_convergence_rate(h, results['H1'])
+    rate_E, r2_E = compute_convergence_rate(h, results['energy'])
+
+    print(f"\n  Convergence rates (log-log regression):")
+    print(f"    L²:     {rate_L2:.2f} (R²={r2_L2:.3f}), expected: 2.0")
+    print(f"    H¹:     {rate_H1:.2f} (R²={r2_H1:.3f}), expected: 1.0")
+    print(f"    Energy: {rate_E:.2f} (R²={r2_E:.3f}), expected: 1.0")
+
+    # Plot convergence
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    ax.loglog(h, results['L2'], 'bo-', linewidth=2, markersize=8,
+              label=f'L² error (rate={rate_L2:.2f})')
+    ax.loglog(h, results['H1'], 'rs-', linewidth=2, markersize=8,
+              label=f'H¹ semi-norm (rate={rate_H1:.2f})')
+    ax.loglog(h, results['energy'], 'g^-', linewidth=2, markersize=8,
+              label=f'Energy norm (rate={rate_E:.2f})')
+
+    # Theoretical reference lines
+    ref_L2 = results['L2'][0] * (h / h[0])**2
+    ref_H1 = results['H1'][0] * (h / h[0])**1
+    ax.loglog(h, ref_L2, 'b--', alpha=0.4, label='O(h²) [Xu/Wriggers expected]')
+    ax.loglog(h, ref_H1, 'r--', alpha=0.4, label='O(h¹) [Xu/Wriggers expected]')
+
+    ax.set_xlabel('h (effective mesh size)', fontsize=12)
+    ax.set_ylabel('Error norm', fontsize=12)
+    ax.set_title('C5: Space-Time VEM Convergence — Manufactured Solution\n'
+                 'u(x,t) = sin(πx)·exp(−t), C = diag(κ, β)',
+                 fontsize=13, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    path = f'{save_dir}/vem_benchmark_manufactured.png'
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    print(f"  Saved: {path}")
+    plt.close()
+
+    results['rate_L2'] = rate_L2
+    results['rate_H1'] = rate_H1
+    results['rate_energy'] = rate_E
+    results['r2_L2'] = r2_L2
+    results['r2_H1'] = r2_H1
+    results['r2_energy'] = r2_E
+    results['problem'] = 'Manufactured'
+    return results
+
+
+# ── Comparison Table ─────────────────────────────────────────────────────
+
+def write_comparison_table(results_list, save_dir='/tmp'):
+    """Write quantitative comparison table to text file."""
+    path = f'{save_dir}/vem_comparison_table.txt'
+    lines = []
+    lines.append("=" * 90)
+    lines.append("  VEM Space-Time Benchmark: Quantitative Comparison with Literature")
+    lines.append("  Reference: Xu, Junker, Wriggers (CMAME 2025), DOI:10.1016/j.cma.2024.117683")
+    lines.append("=" * 90)
+    lines.append("")
+
+    for res in results_list:
+        if res is None or 'problem' not in res:
+            continue
+
+        name = res['problem']
+        lines.append(f"--- {name} ---")
+        lines.append(f"{'Level':>6} {'DOFs':>8} {'h':>10} {'L² err':>12} "
+                      f"{'H¹ err':>12} {'E err':>12}")
+
+        n = len(res.get('h', []))
+        for i in range(n):
+            h_i = res['h'][i]
+            dof_i = res['dofs'][i] if 'dofs' in res else '-'
+            l2_i = f"{res['L2'][i]:.4e}" if 'L2' in res and i < len(res['L2']) else '-'
+            h1_i = f"{res['H1'][i]:.4e}" if 'H1' in res and i < len(res['H1']) else '-'
+            e_i = f"{res['energy'][i]:.4e}" if 'energy' in res and i < len(res['energy']) else '-'
+            lines.append(f"{i+1:>6} {dof_i:>8} {h_i:>10.5f} {l2_i:>12} {h1_i:>12} {e_i:>12}")
+
+        lines.append("")
+
+        # Regression rates
+        expected = {'L2': 2.0, 'H1': 1.0, 'energy': 1.0}
+        for norm in ['L2', 'H1', 'energy']:
+            rate_key = f'rate_{norm}'
+            r2_key = f'r2_{norm}'
+            if rate_key in res:
+                rate = res[rate_key]
+                r2 = res.get(r2_key, 0)
+                exp = expected[norm]
+                tol = 0.5
+                verdict = "MATCH" if abs(rate - exp) < tol else (
+                    "DEGRADED" if abs(rate - exp) < 1.0 else "FAIL")
+                lines.append(f"  {norm:>6} rate: {rate:6.2f} (R²={r2:.3f}), "
+                              f"expected: {exp:.1f} [{verdict}]")
+        lines.append("")
+
+    lines.append("=" * 90)
+    lines.append("Notes:")
+    lines.append("  - Expected rates: L² ~ O(h²), H¹ ~ O(h), Energy ~ O(h) for k=1 VEM")
+    lines.append("  - Xu et al. use 2.5D extrusion; our approach is true 2D (x,t) plane")
+    lines.append("  - Wave equation uses ε-regularization (indefinite tensor), degraded rates expected")
+    lines.append("  - MATCH: |rate - expected| < 0.5, DEGRADED: < 1.0, FAIL: >= 1.0")
+    lines.append("=" * 90)
+
+    text = '\n'.join(lines)
+    with open(path, 'w') as f:
+        f.write(text)
+    print(f"\n  Comparison table saved: {path}")
+    print(text)
+
+
+# ── Summary Convergence Plot ─────────────────────────────────────────────
+
+def plot_summary_convergence(results_list, save_dir='/tmp'):
+    """Paper-quality combined convergence plot for all benchmarks."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    colors = {'Wave': 'tab:blue', 'Manufactured': 'tab:red'}
+    markers = {'Wave': 'o', 'Manufactured': 's'}
+
+    for res in results_list:
+        if res is None or 'h' not in res:
+            continue
+        name = res['problem']
+        h = np.array(res['h'])
+        c = colors.get(name, 'tab:gray')
+        m = markers.get(name, 'D')
+
+        # Left: L² error
+        if 'L2' in res and len(res['L2']) > 0:
+            rate = res.get('rate_L2', 0)
+            axes[0].loglog(h, res['L2'], f'{m}-', color=c, linewidth=2,
+                           markersize=8, label=f'{name} (rate={rate:.2f})')
+
+        # Right: H¹ / energy
+        if 'H1' in res and len(res['H1']) > 0:
+            rate = res.get('rate_H1', 0)
+            axes[1].loglog(h, res['H1'], f'{m}-', color=c, linewidth=2,
+                           markersize=8, label=f'{name} H¹ ({rate:.2f})')
+        if 'energy' in res and len(res['energy']) > 0:
+            rate = res.get('rate_energy', 0)
+            axes[1].loglog(h, res['energy'], f'{m}--', color=c, linewidth=1.5,
+                           markersize=6, alpha=0.7,
+                           label=f'{name} energy ({rate:.2f})')
+
+    # Theoretical reference
+    h_ref = np.logspace(-1.5, -0.5, 20)
+    axes[0].loglog(h_ref, 0.5 * h_ref**2, 'k--', alpha=0.3, label='O(h²) theory')
+    axes[0].loglog(h_ref, 0.5 * h_ref**1, 'k:', alpha=0.3, label='O(h¹) theory')
+    axes[1].loglog(h_ref, 0.5 * h_ref**1, 'k--', alpha=0.3, label='O(h¹) theory')
+
+    axes[0].set_xlabel('h')
+    axes[0].set_ylabel('L² error')
+    axes[0].set_title('L² Convergence')
+    axes[0].legend(fontsize=9)
+    axes[0].grid(True, alpha=0.3)
+
+    axes[1].set_xlabel('h')
+    axes[1].set_ylabel('H¹ / Energy error')
+    axes[1].set_title('H¹ and Energy Norm Convergence')
+    axes[1].legend(fontsize=9)
+    axes[1].grid(True, alpha=0.3)
+
+    fig.suptitle('Space-Time VEM: Convergence Comparison with Xu/Wriggers (2025)',
+                 fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    path = f'{save_dir}/vem_benchmark_summary.png'
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    print(f"  Summary plot saved: {path}")
+    plt.close()
+
+
 # ── Main ──────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     save_dir = os.path.join(os.path.dirname(__file__), 'results')
     os.makedirs(save_dir, exist_ok=True)
 
-    # Run all benchmarks
     print("\n" + "=" * 60)
     print("  VEM Space-Time Benchmark Suite (C4/C5/C6)")
     print("=" * 60 + "\n")
 
-    benchmark_wave(save_dir)
+    convergence_results = []
+
+    # Benchmark 1-4 (existing)
+    res_wave = benchmark_wave(save_dir)
+    convergence_results.append(res_wave)
+
     benchmark_sls(save_dir)
     benchmark_stabilization(save_dir)
     benchmark_elastodynamics(save_dir)
+
+    # Benchmark 5 (new: manufactured solution)
+    res_mfg = benchmark_manufactured(save_dir)
+    convergence_results.append(res_mfg)
+
+    # Comparison table and summary plot
+    write_comparison_table(convergence_results, save_dir)
+    plot_summary_convergence(convergence_results, save_dir)
 
     print("\n" + "=" * 60)
     print("  All benchmarks complete!")
