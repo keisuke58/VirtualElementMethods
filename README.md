@@ -25,6 +25,8 @@ VirtualElementMethods/
 │
 ├── vem_nonlinear.py            # ★ Neo-Hookean hyperelasticity + Newton-Raphson
 ├── vem_phase_field.py          # ★ Phase-field fracture (Aldakheel 2018)
+├── vem_adaptive_fracture.py    # ★ Adaptive h-refinement + phase-field crack
+├── vem_czm.py                  # ★ Cohesive Zone Model (tooth-biofilm interface)
 ├── vem_spacetime.py            # Space-Time VEM (SLS viscoelastic)
 ├── vem_growth_coupled.py       # Growth-Coupled VEM (Hamilton ODE + VEM)
 ├── vem_confocal_pipeline.py    # Confocal → VEM pipeline
@@ -66,8 +68,8 @@ VirtualElementMethods/
 | Step | 内容 | 難易度 | Impact | Status |
 |------|------|--------|--------|--------|
 | **B1** | **Phase-field detachment** — DI→破壊靭性 G_c(DI) マッピング | 中 | 極高 | **Done** ✓ |
-| **B2** | **CZM (Cohesive Zone) on VEM** — 歯-バイオフィルム界面の剥離 | 中 | 高 | Planned |
-| **B3** | **Adaptive VEM + crack** — 亀裂先端に自動細分化 (error estimator 済) | 高 | 高 | Planned |
+| **B2** | **CZM (Cohesive Zone) on VEM** — 歯-バイオフィルム界面の剥離 | 中 | 高 | **Done** ✓ |
+| **B3** | **Adaptive VEM + crack** — 亀裂先端に自動細分化 (error estimator 済) | 高 | 高 | **Done** ✓ |
 
 ### 優先順位
 
@@ -87,6 +89,8 @@ VirtualElementMethods/
 | `vem_elasticity.py` | 2D P₁ linear elasticity | 6 poly basis, patch test 1e-18, sparse assembly |
 | `vem_nonlinear.py` | **Neo-Hookean hyperelasticity** | Newton-Raphson, load stepping, line search, DI→μ,λ |
 | `vem_phase_field.py` | **Phase-field fracture** | Aldakheel 2018, staggered solve, DI→G_c, spectral decomp |
+| `vem_adaptive_fracture.py` | **Adaptive + phase-field** | Crack-tip indicator, auto h-refinement, field transfer |
+| `vem_czm.py` | **Cohesive Zone Model** | Bilinear TSL, DI→σ_max, tooth-biofilm interface debonding |
 | `vem_3d.py` | 3D elasticity on polyhedra | 12 poly basis, patch test 1e-19 |
 | `vem_3d_advanced.py` | 3D Voronoi + VTK | Sparse solver, convergence rate 1.80 |
 
@@ -119,6 +123,20 @@ VirtualElementMethods/
 - Commensal periphery remains intact (high G_c = 0.5 J/m²)
 - 82/82 nodes in crack zone reach d=1.0 (full failure)
 - Clear load-displacement curve with distinct failure point
+
+### B3: Adaptive + Phase-field Crack
+
+- Auto h-refinement at crack tip: 40 → 84 → 95 → 121 cells (3 levels)
+- Crack-tip indicator: η = w₁·|∇d| + w₂·ψ⁺/G_c (Dörfler marking)
+- Field transfer via nearest-neighbor interpolation (d, ψ history)
+- Full crack propagation with locally refined mesh at fracture front
+
+### B2: CZM Interface Detachment
+
+- Bilinear traction-separation law (Park-Paulino-Roesler 2009)
+- DI→σ_max: 10 Pa (commensal) → 1 Pa (dysbiotic), mixed-mode coupling
+- Progressive debonding: center (weak) debonds first at LF=7.8
+- Irreversible damage with load redistribution to intact interface
 
 ### h-Convergence (Linear VEM)
 | Method | L² rate | H¹ rate |
