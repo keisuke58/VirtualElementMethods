@@ -234,7 +234,18 @@ confocal → colony detection → Voronoi tessellation → VEM
   - P.aeruginosa 単種: 282×339×714 voxels (189MB float32 TIFF)
   - S.aureus + P.aeruginosa dual-species: 404×428×398 voxels (135MB float32 TIFF)
   - CC-BY-4.0, open access, DL済み (`3d_data/`)
-  - 3D Voronoi VEM mesh 生成の proof-of-concept
+  - **3D Voronoi VEM パイプライン実証済み** (`pipeline_3d_real.py`):
+    - PA single: 65 Voronoi cells, E=[42,237] Pa, |u|=0.0023 µm, 11s total
+    - SAPA dual: 131 cells, DI=[0.18,0.79], E=[74,682] Pa, |u|=0.0005 µm, 37s
+    - Vertex cleanup (2196→352) で singular matrix 問題を解決
+  - **VEM vs FEM tet benchmark** (`benchmark_3d_vem_vs_tet.py`):
+    - VEM: 80 cells (1:1 colony correspondence), 1290 DOFs
+    - FEM: 482 tets, 282 DOFs
+    - VEM advantage: 1 colony = 1 element → per-colony DI/E 直接割当て
+  - **Phase-field on real geometry** (`phase_field_real_3d.py`):
+    - SAPA 2D cross-section → 69 VEM elements, DI-dependent G_c
+    - PA-dominant 領域 (G_c=0.038) から優先的にクラック進展
+    - 30 steps で d_max=0.85 (progressive damage)
 - **Mark Welch (MBL) に 3D oral z-stack 共有を打診** → future collaboration
   - CLASI-FISH hedgehog structures (10+ taxa, PNAS 2016)
   - Raw z-stacks は未公開 → 共有打診が最も生産的なパス
@@ -264,6 +275,8 @@ confocal → colony detection → Voronoi tessellation → VEM
 - 12 ソルバー, 120+ テスト, machine precision
 - DI-dependent 弾性/粘弾性/破壊の統一フレームワーク
 - Confocal → VEM 2-step pipeline で実験データ直結
+- **3D real biofilm 実証**: light sheet TIFF → 131 Voronoi cells → VEM 応力解析 (37s)
+- **Phase-field on real geometry**: PA-dominant 領域から優先的にクラック進展
 - IKM の VEM 固体力学 + TMCMC 微生物動態 = 新しい計算バイオメカニクス
 
 ---
@@ -286,6 +299,10 @@ confocal → colony detection → Voronoi tessellation → VEM
 | 12 | **DI gradient + viscoelasticity**: spatial stress at t=0, τ, 3τ | `vem_viscoelastic.py` demo |
 | 13 | **Confocal → VEM**: FISH image → Voronoi → stress field | `vem_confocal_pipeline.py` |
 | 14 | **Grand showcase**: 8-panel overview (graphical abstract candidate) | `generate_grand_showcase.py` |
+| 15 | **3D real biofilm**: PA/SAPA overview (colony, DI, E, |u|) | `pipeline_3d_real.py` |
+| 16 | **VEM vs FEM tet benchmark**: mesh comparison table + displacement | `benchmark_3d_vem_vs_tet.py` |
+| 17 | **Phase-field on real geometry**: DI → G_c → progressive damage | `phase_field_real_3d.py` |
+| 18 | **Single vs dual comparison**: DI/E/|u| distributions | `pipeline_3d_real.py` |
 
 ---
 
