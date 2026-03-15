@@ -97,6 +97,10 @@
 - E(DI) = E_min + (E_max - E_min)(1-DI)^n
 - E_max = 1000 Pa, E_min = 30 Pa, n = 2
 - 文献根拠: Pattem 2018 (30× range), Gloag 2019, percolation theory (n=2)
+- **Mechanistic support (TMCMC paper, Section 2.4b)**:
+  - Composite model: φ_EPS × cross-link diversity → hydrogel scaling (de Gennes) → Mori-Tanaka
+  - 5-model BF comparison: DI decisive best (Bhatt=25.45), Composite 2nd (BF=2965)
+  - DI serves as proxy for φ_EPS × cross-link diversity → phenomenological law has first-principles basis
 
 #### 3.3 Fracture toughness: G_c(DI)
 - G_c(DI) = G_c_min + (G_c_max - G_c_min)(1-DI)^n
@@ -220,6 +224,38 @@ confocal → colony detection → Voronoi tessellation → VEM
 - 3D confocal z-stack → polyhedral VEM
 - DeepONet surrogate on VEM meshes
 - 実験検証: Sanz-Martin 2022 or 新規 confocal データ
+
+#### 7.6 ML-Enhanced Confocal → VEM Pipeline
+- **CLASI-FISH × U-Net** によるセグメンテーション自動化（先行研究なし = novelty）
+  - 14ドナー, ~50k patches (256×256), Morillo-Lopez 2022 データ
+  - 先行 ML biofilm segmentation: Sadiq 2021 (Dice 0.90), Zhang 2022 (Dice 0.87), いずれも非 oral
+  - **CLASI-FISH multi-species oral biofilm に ML 適用は世界初**
+- **3D Light Sheet Biofilm データ** (Zenodo 10.5281/zenodo.18154035) で VEM 3D パイプラインを検証
+  - P.aeruginosa 単種: 282×339×714 voxels (189MB float32 TIFF)
+  - S.aureus + P.aeruginosa dual-species: 404×428×398 voxels (135MB float32 TIFF)
+  - CC-BY-4.0, open access, DL済み (`3d_data/`)
+  - 3D Voronoi VEM mesh 生成の proof-of-concept
+- **Mark Welch (MBL) に 3D oral z-stack 共有を打診** → future collaboration
+  - CLASI-FISH hedgehog structures (10+ taxa, PNAS 2016)
+  - Raw z-stacks は未公開 → 共有打診が最も生産的なパス
+
+##### 3D Confocal データの現状
+- **公開 3D oral biofilm データセットは存在しない** (2025年時点)
+- **取得済み** (Zenodo 10.5281/zenodo.18154035, CC-BY-4.0):
+  - `PA_cluster2_3d.tif`: P.aeruginosa 282×339×714, light sheet 3D再構成
+  - `SAPA_cluster2_3d.tif`: S.aureus+P.aeruginosa 404×428×398, dual-species
+- HiPR-FISH (Shi et al. 2020): 100+ taxa, probe tools on GitHub, raw images 要著者連絡
+- Mark Welch (MBL): CLASI-FISH hedgehog oral z-stacks, 要著者連絡
+
+##### 2D Confocal ML 文献 (位置づけ)
+| 著者 | 年 | 手法 | 対象 | Dice/Acc | 公開 |
+|---|---|---|---|---|---|
+| Sadiq et al. | 2021 | U-Net | P.aeruginosa CLSM | ~0.90 | No |
+| Zhang et al. | 2022 | Mask R-CNN + U-Net | CLSM biofilm | 0.87 | Partial |
+| Jeckel et al. | 2023 | CNN (BiofilmQ) | Phase+蛍光 | tracking | Yes |
+| Kim et al. | 2022 | ResNet-50 | Confocal 4分類 | 94.2% | No |
+| Rani et al. | 2023 | U-Net + attention | 廃水 biofilm | 0.91 | No |
+| **Ours (proposed)** | 2026 | U-Net | **CLASI-FISH oral 5+ species** | **TBD** | **Yes** |
 
 ---
 

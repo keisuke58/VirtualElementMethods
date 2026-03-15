@@ -13,24 +13,59 @@ Aldakheel, F., Hudobivnik, B., Hussein, A., Wriggers, P.: Phase-field modeling
   443--466 (2018).
 \newblock \doi{10.1016/j.cma.2018.07.008}
 
+\bibitem{Antonietti2022}
+Antonietti, P.F., Manzini, G., Scacchi, S., Verani, M.: A review on arbitrarily
+  regular conforming virtual element methods for second- and higher-order
+  elliptic partial differential equations.
+\newblock Mathematical Models and Methods in Applied Sciences \textbf{31}(14),
+  2825--2853 (2021).
+\newblock \doi{10.1142/S0218202521500627}
+
 \bibitem{Arbabi1993}
 Arbabi, S., Sahimi, M.: Mechanics of disordered solids. {I}. {P}ercolation on
   elastic networks with central forces.
 \newblock Physical Review B \textbf{47}(2), 695--702 (1993).
 \newblock \doi{10.1103/PhysRevB.47.695}
 
+\bibitem{Artioli2017}
+Artioli, E., Beir{\~a}o~da Veiga, L., Lovadina, C., Sacco, E.: Arbitrary order
+  2{D} virtual elements for polygonal meshes: {P}art {II}, inelastic problem.
+\newblock Computational Mechanics \textbf{60}, 643--657 (2017).
+\newblock \doi{10.1007/s00466-017-1429-9}
+
+\bibitem{Bourdin2000}
+Bourdin, B., Francfort, G.A., Marigo, J.J.: Numerical experiments in revisited
+  brittle fracture.
+\newblock Journal of the Mechanics and Physics of Solids \textbf{48}(4),
+  797--826 (2000).
+\newblock \doi{10.1016/S0022-5096(99)00028-9}
+
+\bibitem{Chi2017}
+Chi, H., Beir{\~a}o~da Veiga, L., Paulino, G.H.: Some basic formulations of the
+  virtual element method ({VEM}) for finite deformations.
+\newblock Computer Methods in Applied Mechanics and Engineering \textbf{318},
+  148--192 (2017).
+\newblock \doi{10.1016/j.cma.2016.12.020}
+
 \bibitem{Flemming2010}
 Flemming, H.C., Wingender, J.: The biofilm matrix.
 \newblock Nature Reviews Microbiology \textbf{8}, 623--633 (2010).
 \newblock \doi{10.1038/nrmicro2415}
 
-\bibitem{Gloag2019}
+\bibitem{Gain2014}
+Gain, A.L., Talischi, C., Paulino, G.H.: On the virtual element method for
+  three-dimensional linear elasticity problems on arbitrary polyhedral meshes.
+\newblock Computer Methods in Applied Mechanics and Engineering \textbf{282},
+  132--160 (2014).
+\newblock \doi{10.1016/j.cma.2014.05.005}
+
+\bibitem{Gloag2020a}
 Gloag, E.S., Fabbri, S., Wozniak, D.J., Stoodley, P.: Biofilm mechanics:
   implications in infection and survival.
 \newblock Biofilm \textbf{2}, 100017 (2020).
 \newblock \doi{10.1016/j.bioflm.2019.100017}
 
-\bibitem{Gloag2020}
+\bibitem{Gloag2020b}
 Gloag, E.S., Wozniak, D.J., Stoodley, P., Hall-Stoodley, L.: A
   micro-rheological perspective of biofilm mechanics.
 \newblock Journal of Bacteriology \textbf{202}(17), e00764--19 (2020).
@@ -52,6 +87,12 @@ Klempt, C., Soleimani, M., Wriggers, P., Junker, P.: A {H}amilton
   (2024).
 \newblock \doi{10.1007/s10237-024-01883-x}
 
+\bibitem{Laspidou2014}
+Laspidou, C.S., Aravas, N.: Variation in the mechanical properties of a porous
+  multi-phase biofilm under compression due to void closure.
+\newblock Water Science and Technology \textbf{69}(7), 1504--1512 (2014).
+\newblock \doi{10.2166/wst.2014.054}
+
 \bibitem{Miehe2010}
 Miehe, C., Hofacker, M., Welschinger, F.: A phase field model for
   rate-independent crack propagation: robust algorithmic implementation based
@@ -59,6 +100,18 @@ Miehe, C., Hofacker, M., Welschinger, F.: A phase field model for
 \newblock Computer Methods in Applied Mechanics and Engineering
   \textbf{199}(45--48), 2765--2778 (2010).
 \newblock \doi{10.1016/j.cma.2010.04.011}
+
+\bibitem{MorilloLopez2022}
+Morillo-Lopez, V., Strber, A., Hedlund, T., Drescher, K., Mark~Welch, J.L.:
+  Corncob structures in dental plaque reveal microhabitat taxon specificity.
+\newblock Microbiome \textbf{10}, 187 (2022).
+\newblock \doi{10.1186/s40168-022-01323-x}
+
+\bibitem{Ohashi2009}
+Ohashi, A., Harada, H.: Adhesion strength of biofilm developed in an
+  attached-growth reactor.
+\newblock Water Science and Technology \textbf{36}(1), 17--23 (1997).
+\newblock \doi{10.1016/S0273-1223(97)00325-9}
 
 \bibitem{Park2009}
 Park, K., Paulino, G.H., Roesler, J.R.: A unified potential-based cohesive
@@ -92,12 +145,31 @@ Peterson, B.W., He, Y., Ren, Y., Zerdoum, A., Libber, M.R., Sharma, P.K., van
 Sahimi, M.: Applications of Percolation Theory.
 \newblock Taylor \& Francis, London (1994)
 
+\bibitem{Shi2020}
+Shi, H., Shi, Q., Grodner, B., Lenz, J.S., Lai, W.K., Shortridge, M.D., Vaiana,
+  C.A., Mohanty, S., Behura, S.K., Marks, D.S., DeLisa, M.P., De~Vlaminck, I.:
+  Highly multiplexed spatial mapping of microbial communities.
+\newblock Nature \textbf{588}, 676--681 (2020).
+\newblock \doi{10.1038/s41586-020-2983-4}
+
 \bibitem{Simo1987}
 Simo, J.C.: On a fully three-dimensional finite-strain viscoelastic damage
   model: formulation and computational aspects.
 \newblock Computer Methods in Applied Mechanics and Engineering \textbf{60}(2),
   153--173 (1987).
 \newblock \doi{10.1016/0045-7825(87)90107-1}
+
+\bibitem{SimoHughes1998}
+Simo, J.C., Hughes, T.J.R.: Computational Inelasticity.
+\newblock Springer, New York (1998).
+\newblock \doi{10.1007/b98904}
+
+\bibitem{Stoodley1999}
+Stoodley, P., Lewandowski, Z., Boyle, J.D., Lappin-Scott, H.M.: Structural
+  deformation of bacterial biofilms caused by short-term fluctuations in fluid
+  shear: an in situ investigation of biofilm rheology.
+\newblock Biotechnology and Bioengineering \textbf{65}(1), 83--92 (1999).
+\newblock \doi{10.1002/(SICI)1097-0290(19991005)65:1<83::AID-BIT10>3.0.CO;2-B}
 
 \bibitem{Sutton2017}
 Sutton, O.J.: The virtual element method in 50 lines of {MATLAB}.

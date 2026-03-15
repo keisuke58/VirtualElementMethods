@@ -670,7 +670,7 @@ def fig08_phase_field():
         ax.set_xlim(xmin - 0.05, xmax + 0.05)
         ax.set_ylim(ymin - 0.05, ymax + 0.05)
         ax.set_aspect("equal")
-        ax.set_title(f"{title}\n$d_{{\\max}}$={snap['d_max']:.2f}", fontsize=8, fontweight="bold")
+        ax.set_title(f"{title}  ($d_{{\\max}}$={snap['d_max']:.2f})", fontsize=8, fontweight="bold")
         ax.tick_params(labelsize=6)
 
     cbar = fig.colorbar(pc, cax=cax, orientation="horizontal", label="Damage $d$")
@@ -696,6 +696,7 @@ def fig09_adaptive():
 
     bars = ax.bar(levels, cells, color=[ACCENT, "#66c2a5", "#fc8d62", DS_COLOR],
                   edgecolor="k", linewidth=0.5, width=0.6)
+    ax.set_ylim(0, 140)
     for i, (n, d) in enumerate(zip(cells, d_max)):
         ax.text(i, n + 3, f"{n}", ha="center", fontsize=8, fontweight="bold")
 
@@ -816,12 +817,14 @@ def fig11_growth_coupled():
                     ("(c) $\\tau$ evolution", "$\\tau$ [s]", "Time [s]"),
                     ("(d) Mean $\\sigma_{\\mathrm{vM}}$", "$\\sigma_{\\mathrm{vM}}$ [Pa]", "Time [s]")]
 
-    for ax, (title, ylabel, xlabel) in zip(axes.flat, panel_labels):
-        ax.set_title(title, fontweight="bold")
-        ax.set_ylabel(ylabel)
-        ax.set_xlabel(xlabel)
-        ax.legend(fontsize=7)
+    legend_locs = ["lower left", "upper right", "lower left", "lower left"]
+    for ax, (title, ylabel, xlabel), loc in zip(axes.flat, panel_labels, legend_locs):
+        ax.set_title(title, fontsize=9, fontweight="bold")
+        ax.set_ylabel(ylabel, fontsize=7)
+        ax.set_xlabel(xlabel, fontsize=7)
+        ax.legend(fontsize=6, loc=loc, framealpha=0.9, edgecolor="#ccc")
         ax.grid(alpha=0.2)
+        ax.tick_params(labelsize=6)
 
     fig.tight_layout()
     fig.savefig(str(SAVE_DIR / "fig11_growth_coupled.pdf"))
@@ -1069,12 +1072,13 @@ def fig14_relaxation():
 
         # Tau marker
         ax.axvline(tau, color=c, ls=":", lw=0.6, alpha=0.4)
-        ax.text(tau + 1, sig_vem[0] * 0.95, f"$\\tau$={tau:.0f}s", fontsize=6, color=c)
+        ax.text(tau + 1, ax.get_ylim()[1] * 0.92, f"$\\tau$={tau:.0f}s",
+                fontsize=6, color=c, va="top")
 
-        # Relaxation percentage — place inside the curve, not at the edge
+        # Relaxation percentage
         relax_pct = (1 - sig_vem[-1] / sig_vem[0]) * 100
-        mid_idx = len(t_array) // 2
-        ax.text(t_array[mid_idx], sig_vem[mid_idx] * 1.08,
+        mid_idx = len(t_array) * 2 // 3
+        ax.text(t_array[mid_idx], sig_vem[mid_idx] * 1.12,
                 f"{relax_pct:.0f}%", fontsize=6, color=c, fontweight="bold", ha="center")
 
     ax.set_xlabel("Time [s]")
@@ -1084,9 +1088,10 @@ def fig14_relaxation():
     ax.grid(alpha=0.2)
     ax.set_xlim(0, 120)
 
-    ax.text(0.02, 0.15, "Solid: VEM\nDashed: analytical",
+    ax.text(0.35, 0.08, "Solid: VEM  |  Dashed: analytical",
             transform=ax.transAxes, fontsize=6, fontstyle="italic",
-            bbox=dict(boxstyle="round,pad=0.3", fc="lightyellow", alpha=0.9))
+            bbox=dict(boxstyle="round,pad=0.3", fc="lightyellow", alpha=0.9),
+            ha="center")
 
     fig.tight_layout()
     fig.savefig(str(SAVE_DIR / "fig14_relaxation.pdf"))
