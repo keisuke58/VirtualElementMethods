@@ -59,53 +59,59 @@ BLACK = "#333333"
 # ==========================================================================
 def fig01_pipeline():
     """Pipeline comparison: FEM 5-step vs VEM 2-step."""
-    fig, axes = plt.subplots(2, 1, figsize=(DC_W, DC_W * 0.45))
+    fig, axes = plt.subplots(2, 1, figsize=(DC_W, DC_W * 0.50))
+
+    def _draw_pipeline(ax, steps, colors, title, positions, widths, text_colors=None):
+        ax.set_xlim(-0.5, 10.5)
+        ax.set_ylim(-0.1, 1.2)
+        ax.axis("off")
+        ax.text(0, 1.1, title, fontsize=9.5, fontweight="bold", va="top")
+        if text_colors is None:
+            text_colors = ["k"] * len(steps)
+        for i, (label, col, xp, w, tc) in enumerate(zip(steps, colors, positions, widths, text_colors)):
+            box = FancyBboxPatch((xp - w/2, 0.15), w, 0.7,
+                                 boxstyle="round,pad=0.1",
+                                 facecolor=col, edgecolor="#333", linewidth=0.8)
+            ax.add_patch(box)
+            ax.text(xp, 0.5, label, ha="center", va="center",
+                    fontsize=7.5, fontweight="bold", color=tc)
+            if i < len(steps) - 1:
+                x0 = xp + w/2 + 0.05
+                x1 = positions[i+1] - widths[i+1]/2 - 0.05
+                ax.annotate("", xy=(x1, 0.5), xytext=(x0, 0.5),
+                            arrowprops=dict(arrowstyle="-|>", color="#555",
+                                            lw=1.5, mutation_scale=12))
 
     # --- FEM 5-step ---
-    ax = axes[0]
-    ax.set_xlim(0, 10)
-    ax.set_ylim(0, 1)
-    ax.axis("off")
-    ax.set_title("(a) Conventional FEM pipeline (5 steps)", fontsize=10, fontweight="bold", loc="left")
-
-    fem_steps = ["Confocal\nimage", "Voxel\nsegment.", "Marching\ncubes", "Tet\nmeshing", "Abaqus\nFEM"]
-    fem_colors = ["#c7e9c0", "#a1d99b", "#74c476", "#41ab5d", "#238b45"]
-    for i, (label, col) in enumerate(zip(fem_steps, fem_colors)):
-        x = 0.5 + 2.0 * i
-        box = FancyBboxPatch((x - 0.7, 0.2), 1.4, 0.6, boxstyle="round,pad=0.08",
-                             facecolor=col, edgecolor="k", linewidth=0.6)
-        ax.add_patch(box)
-        ax.text(x, 0.5, label, ha="center", va="center", fontsize=7, fontweight="bold")
-        if i < len(fem_steps) - 1:
-            ax.annotate("", xy=(x + 0.85, 0.5), xytext=(x + 1.15, 0.5),
-                        arrowprops=dict(arrowstyle="<-", color="k", lw=1.2))
+    fem_steps = ["Confocal\nimage", "Voxel\nsegment.", "Marching\ncubes", "Tet\nmeshing", "FEM\nsolver"]
+    fem_colors = ["#e5f5e0", "#c7e9c0", "#a1d99b", "#74c476", "#31a354"]
+    fem_pos = [0.8, 2.8, 4.8, 6.8, 8.8]
+    fem_w = [1.3, 1.3, 1.3, 1.3, 1.3]
+    fem_tc = ["k", "k", "k", "k", "white"]
+    _draw_pipeline(axes[0], fem_steps, fem_colors,
+                   "(a) Conventional FEM pipeline", fem_pos, fem_w, fem_tc)
+    # step numbers
+    for i, xp in enumerate(fem_pos):
+        axes[0].text(xp, -0.02, f"Step {i+1}", fontsize=6, ha="center",
+                     color="#666", fontstyle="italic")
 
     # --- VEM 2-step ---
-    ax = axes[1]
-    ax.set_xlim(0, 10)
-    ax.set_ylim(0, 1)
-    ax.axis("off")
-    ax.set_title("(b) Proposed VEM pipeline (2 steps)", fontsize=10, fontweight="bold", loc="left")
+    vem_steps = ["Confocal\nimage", "Colony detect.\n+ Voronoi", "VEM solver\n(12 modules)"]
+    vem_colors = ["#deebf7", "#6baed6", "#2171b5"]
+    vem_pos = [1.2, 4.5, 8.2]
+    vem_w = [1.6, 2.4, 2.8]
+    vem_tc = ["k", "k", "white"]
+    _draw_pipeline(axes[1], vem_steps, vem_colors,
+                   "(b) Proposed VEM pipeline", vem_pos, vem_w, vem_tc)
+    # step numbers
+    axes[1].text(1.2, -0.02, "Input", fontsize=6, ha="center", color="#666", fontstyle="italic")
+    axes[1].text(4.5, -0.02, "Step 1", fontsize=6, ha="center", color="#2171b5", fontweight="bold")
+    axes[1].text(8.2, -0.02, "Step 2", fontsize=6, ha="center", color="#2171b5", fontweight="bold")
+    # per-colony DI annotation
+    axes[1].text(4.5, 0.93, "per-colony DI assignment",
+                 fontsize=6.5, ha="center", color="#e08214", fontstyle="italic")
 
-    vem_steps = ["Confocal\nimage", "Voronoi\ntessellation", "VEM\nsolver"]
-    vem_colors = ["#c6dbef", "#6baed6", "#2171b5"]
-    widths = [1.4, 2.0, 2.0]
-    positions = [1.5, 4.5, 7.5]
-    for i, (label, col, w, xp) in enumerate(zip(vem_steps, vem_colors, widths, positions)):
-        box = FancyBboxPatch((xp - w/2, 0.2), w, 0.6, boxstyle="round,pad=0.08",
-                             facecolor=col, edgecolor="k", linewidth=0.6)
-        ax.add_patch(box)
-        ax.text(xp, 0.5, label, ha="center", va="center", fontsize=8, fontweight="bold",
-                color="white" if i == 2 else "k")
-        if i < len(vem_steps) - 1:
-            ax.annotate("", xy=(xp + w/2 + 0.1, 0.5), xytext=(positions[i+1] - widths[i+1]/2 - 0.1, 0.5),
-                        arrowprops=dict(arrowstyle="<-", color="k", lw=1.2))
-
-    # Annotations
-    axes[0].text(9.8, 0.05, "5 steps", fontsize=8, ha="right", color="#666", fontstyle="italic")
-    axes[1].text(9.8, 0.05, "2 steps", fontsize=8, ha="right", color="#2171b5", fontweight="bold")
-
-    fig.tight_layout(h_pad=0.5)
+    fig.tight_layout(h_pad=0.8)
     fig.savefig(str(SAVE_DIR / "fig01_pipeline.pdf"))
     fig.savefig(str(SAVE_DIR / "fig01_pipeline.png"))
     plt.close(fig)

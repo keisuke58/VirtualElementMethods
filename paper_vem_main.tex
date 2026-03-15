@@ -248,6 +248,26 @@ e^{-\Delta t/\tau}\,\vect{h}_n^E$.
 This formulation is \emph{unconditionally stable} for any $\Delta t > 0$
 and exact for constant strain rate within a time step.
 
+\subsection{Extension to 3D polyhedral elements}
+\label{sec:vem:3d}
+
+The 2D formulation extends to polyhedral elements following
+Wriggers et al.~\cite{Wriggers2019,Wriggers2024}.
+On a polyhedron~$E$ with $n_v$ vertices and $n_f$ faces,
+the polynomial basis has 12 modes
+(3~translations, 3~rotations, 6~constant strain),
+giving $n_\mathrm{dof}^E = 3 n_v$.
+The $\mat{B}$ matrix ($12 \times 3n_v$) is assembled via
+face integrals using the midpoint rule on triangulated faces.
+The strain projector
+$\tens{\Pi}_\varepsilon$ ($6 \times 3n_v$) extracts rows 7--12
+from the full projector, and the algorithmic tangent uses
+$6 \times 6$ Voigt matrices for the isotropic SLS model.
+The 3D VE-VEM achieves machine-precision validation:
+max relative error $4.9 \times 10^{-16}$ under confined
+compression on 27 hexahedral cells, confirming dimension-independent
+correctness of the Simo integrator coupling.
+
 \subsection{Phase-field fracture on VEM}
 \label{sec:vem:pf}
 
@@ -289,6 +309,40 @@ The framework includes several further capabilities:
     A posteriori error estimator with D\"orfler marking for
     automatic mesh refinement at crack tips.
 \end{itemize}
+
+The full framework comprises 12 solver modules validated by
+120$+$ automated tests (Table~\ref{tab:modules}).
+
+\begin{table}[t]
+  \centering
+  \caption{Overview of the 12 VEM solver modules.}
+  \label{tab:modules}
+  \begin{tabular}{llrl}
+    \toprule
+    ID & Module & Tests & Key validation \\
+    \midrule
+    \multicolumn{4}{l}{\textit{Track A: Solid mechanics}} \\
+    A0 & 2D linear elasticity & 9 & Patch test ($10^{-18}$) \\
+    A0$'$ & 3D polyhedral elasticity & 15 & Patch test ($10^{-19}$) \\
+    A1 & Neo-Hookean VEM & 6 & Cook's membrane \\
+    A2 & P$_2$ VEM (2nd order) & 23 & Analytical strain energy \\
+    A3 & VE-VEM (2D SLS) & 25 & Machine prec.\ ($10^{-15}$) \\
+    A3$'$ & VE-VEM (3D SLS) & 5 & Machine prec.\ ($10^{-16}$) \\
+    \midrule
+    \multicolumn{4}{l}{\textit{Track B: Fracture and interface}} \\
+    B1 & Phase-field fracture & 8 & Staggered $u$-$d$ solve \\
+    B2 & Cohesive zone model & 4 & Progressive debonding \\
+    B3 & Adaptive $h$-refinement & 12 & D\"orfler marking \\
+    \midrule
+    \multicolumn{4}{l}{\textit{Track C: Coupled problems}} \\
+    C1 & Growth-coupled VEM & 12 & Replicator ODE \\
+    C2 & VE-VEM $\times$ Growth & 6 & Divergent DI evolution \\
+    C3 & Confocal $\to$ VEM & 4 & 5-ch fluorescence \\
+    \midrule
+    & \textbf{Total} & \textbf{129} & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 % =====================================================================
 \section{DI-dependent constitutive laws}
@@ -660,109 +714,7 @@ of IKM Hannover with TMCMC-calibrated microbial species dynamics.
 All source code is available at
 \url{https://github.com/keisuke58/VirtualElementMethods}.
 
-\begin{thebibliography}{99}
-
-\bibitem{BeiraodaVeiga2013}
-Beir\~ao da Veiga L, Brezzi F, Cangiani A, Manzini G, Marini LD, Russo A (2013)
-Basic principles of virtual element methods.
-\textit{Math Models Methods Appl Sci} 23:199--214
-
-\bibitem{BeiraodaVeiga2014}
-Beir\~ao da Veiga L, Brezzi F, Marini LD, Russo A (2014)
-The hitchhiker's guide to the virtual element method.
-\textit{Math Models Methods Appl Sci} 24:1541--1573
-
-\bibitem{Sutton2017}
-Sutton OJ (2017)
-The virtual element method in 50 lines of MATLAB.
-\textit{Numer Algorithms} 75:1141--1159
-
-\bibitem{Wriggers2019}
-Wriggers P, Hudobivnik B (2019)
-A low order virtual element formulation for finite elasto-plastic deformations.
-\textit{Comput Methods Appl Mech Eng} 327:459--477
-
-\bibitem{Wriggers2024}
-Wriggers P, Aldakheel F, Hudobivnik B (2024)
-\textit{Virtual Element Methods in Engineering Sciences}.
-Springer, Cham
-
-\bibitem{Aldakheel2018}
-Aldakheel F, Hudobivnik B, Hussein A, Wriggers P (2018)
-Phase-field modeling of brittle fracture using an efficient virtual element scheme.
-\textit{Comput Methods Appl Mech Eng} 341:443--466
-
-\bibitem{Simo1987}
-Simo JC (1987)
-On a fully three-dimensional finite-strain viscoelastic damage model:
-formulation and computational aspects.
-\textit{Comput Methods Appl Mech Eng} 60:153--173
-
-\bibitem{Miehe2010}
-Miehe C, Hofacker M, Welschinger F (2010)
-A phase field model for rate-independent crack propagation.
-\textit{Comput Methods Appl Mech Eng} 199:2765--2778
-
-\bibitem{Park2009}
-Park K, Paulino GH, Roesler JR (2009)
-A unified potential-based cohesive model of mixed-mode fracture.
-\textit{J Mech Phys Solids} 57:891--908
-
-\bibitem{Pattem2018}
-Pattem J, Daood U, Yiu CKY, Hedge J, Shiek Ahamd Nazar A,
-Halib N, Ho TCS, Malik SN (2018)
-Mechanical and nanomechanical properties of oral biofilms
-developing on clinical and novel dental restorative materials.
-\textit{Sci Rep} 8:3""{6}73
-
-\bibitem{Pattem2021}
-Pattem J, Daood U, Yiu CKY (2021)
-Nano-mechanical properties of oral biofilms.
-\textit{Sci Rep} 11:17162
-
-\bibitem{Peterson2015}
-Peterson BW, He Y, Ren Y, Zerdoum A, Libber MR, Sharma PK,
-van Winkelhoff AJ, Rinastiti M, Aarnisalo AA,
-Luo TJM, Zuo F, Zhang L, Fang C, van der Mei HC,
-Busscher HJ (2015)
-Viscoelasticity of biofilms and their recalcitrance to
-mechanical and chemical challenges.
-\textit{FEMS Microbiol Rev} 39:234--245
-
-\bibitem{Flemming2010}
-Flemming HC, Wingender J (2010)
-The biofilm matrix.
-\textit{Nat Rev Microbiol} 8:623--633
-
-\bibitem{Gloag2019}
-Gloag ES, Fabbri S, Wozniak DJ, Stoodley P (2019)
-Biofilm mechanics: implications in infection and survival.
-\textit{Biofilm} 2:100017
-
-\bibitem{Gloag2020}
-Gloag ES, Wozniak DJ, Stoodley P, Hall-Stoodley L (2020)
-A micro-rheological perspective of biofilm mechanics.
-\textit{J Bacteriol} 202:e00764-19
-
-\bibitem{Klempt2024}
-Approximately: Klempt C et al.\ (2024)
-Staggered coupling of species dynamics and continuum mechanics for biofilm analysis.
-
-\bibitem{Heine2025}
-Heine R et al.\ (2025)
-Five-species in vitro FISH data for oral biofilm dynamics.
-
-\bibitem{Sahimi1994}
-Sahimi M (1994)
-\textit{Applications of Percolation Theory}.
-Taylor \& Francis, London
-
-\bibitem{Arbabi1993}
-Arbabi S, Sahimi M (1993)
-Mechanics of disordered solids. I. Percolation on elastic networks
-with central forces.
-\textit{Phys Rev B} 47:695--702
-
-\end{thebibliography}
+\bibliographystyle{spmpsci}
+\bibliography{references}
 
 \end{document}
