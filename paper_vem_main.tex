@@ -7,38 +7,44 @@
 % Affiliation: Institute of Continuum Mechanics (IKM),
 %              Leibniz Universität Hannover, Germany
 % =============================================================================
-\documentclass[twocolumn,10pt]{article}
-\usepackage[utf8]{inputenc}
+\documentclass[smallextended]{svjour3}
+\smartqed
 \usepackage{amsmath,amssymb,bm}
 \usepackage{graphicx}
 \usepackage{booktabs}
-%\usepackage{siunitx}
 \usepackage{hyperref}
-%\usepackage{cleveref}
 \usepackage{xcolor}
-\usepackage{subcaption}
 
 \graphicspath{{results/paper_vem/}}
 
 % Notation
 \newcommand{\vect}[1]{\bm{#1}}
 \newcommand{\mat}[1]{\mathbf{#1}}
-\newcommand{\tens}[1]{\boldsymbol{#1}}
+\renewcommand{\tens}[1]{\boldsymbol{#1}}
 \newcommand{\dd}{\mathrm{d}}
 \newcommand{\DI}{\mathrm{DI}}
 \newcommand{\tr}{\mathrm{tr}}
 \DeclareMathOperator{\diag}{diag}
 
+\journalname{Computational Mechanics}
+
 \begin{document}
 
-\title{Virtual Element Method for oral biofilm mechanics: \\
-from confocal images to viscoelastic fracture \\
+\title{Virtual Element Method for oral biofilm mechanics:
+from confocal images to viscoelastic fracture
 on arbitrary polygonal meshes}
+\titlerunning{VEM for oral biofilm mechanics}
 
-\author{Keisuke Nishioka, Fadi Aldakheel, Peter Wriggers \\
-\small Institute of Continuum Mechanics (IKM), \\
-\small Leibniz Universit\"at Hannover, Germany}
-\date{}
+\author{Keisuke Nishioka \and Fadi Aldakheel \and Peter Wriggers}
+
+\institute{K.~Nishioka \and F.~Aldakheel \and P.~Wriggers \at
+  Institute of Continuum Mechanics (IKM), \\
+  Leibniz Universit\"at Hannover, \\
+  Appelstra\ss e 11, 30167 Hannover, Germany \\
+  \email{nishioka@ikm.uni-hannover.de}
+}
+
+\date{Received: date / Accepted: date}
 
 \maketitle
 
@@ -69,9 +75,11 @@ identical initial conditions.
 To our knowledge, this is the first application of VEM to biofilm
 mechanics.
 
-\noindent\textbf{Keywords:} Virtual Element Method, biofilm mechanics,
-viscoelasticity, phase-field fracture, Dysbiosis Index, confocal imaging
 \end{abstract}
+
+\keywords{Virtual Element Method \and biofilm mechanics \and
+viscoelasticity \and phase-field fracture \and Dysbiosis Index \and
+confocal imaging}
 
 % =====================================================================
 \section{Introduction}
@@ -328,13 +336,15 @@ $G_{c,\min} = 0.01$\,J/m$^2$ (dysbiotic, fragile).
 \subsection{SLS viscoelastic parameters}
 \label{sec:const:sls}
 
-\begin{align}
+\begin{equation}
+\label{eq:sls_params}
+\begin{aligned}
   E_\infty(\DI) &= E_\min + (E_\max - E_\min)(1 - \DI)^n, \\
   E_0 &= 2\,E_\infty, \qquad E_1 = E_0 - E_\infty, \\
   \tau(\DI) &= \tau_\min + (\tau_\max - \tau_\min)(1 - \DI)^n, \\
   \eta &= E_1 \cdot \tau,
-  \label{eq:sls_params}
-\end{align}
+\end{aligned}
+\end{equation}
 with $\tau_\max = 60$\,s, $\tau_\min = 2$\,s.
 Commensal biofilms ($\DI \approx 0.1$) have $E_\infty \approx 800$\,Pa
 and $\tau \approx 50$\,s (slow, elastic-like relaxation), while

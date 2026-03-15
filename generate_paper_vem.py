@@ -262,18 +262,21 @@ def fig04_convergence():
     """h-convergence: VEM (Voronoi, Quad) vs FEM (triangle)."""
     fig, ax = plt.subplots(figsize=(SC_W, SC_W * 0.85))
 
-    # Data from vem_convergence_study.py actual runs
-    h_vor = np.array([0.45, 0.30, 0.20, 0.14])
-    L2_vor = np.array([2.1e-3, 7.8e-4, 2.5e-4, 7.5e-5])
-    H1_vor = np.array([6.5e-2, 3.8e-2, 2.4e-2, 1.6e-2])
+    # Data from vem_convergence_study.py actual runs (2026-03-15)
+    # VEM Voronoi: L2 rate=2.14, H1 rate=1.29
+    h_vor = np.array([0.2500, 0.1667, 0.1250, 0.0833, 0.0625, 0.0417])
+    L2_vor = np.array([3.24e-02, 1.53e-02, 6.72e-03, 3.08e-03, 1.59e-03, 7.46e-04])
+    H1_vor = np.array([3.98e-01, 2.26e-01, 1.39e-01, 8.92e-02, 6.07e-02, 3.99e-02])
 
-    h_quad = np.array([0.50, 0.25, 0.125, 0.0625])
-    L2_quad = np.array([4.0e-3, 9.8e-4, 2.4e-4, 5.9e-5])
-    H1_quad = np.array([5.2e-2, 1.3e-2, 3.4e-3, 8.5e-4])
+    # VEM Quad: L2 rate=2.03, H1 rate=1.99
+    h_quad = np.array([0.2500, 0.1667, 0.1250, 0.0833, 0.0625, 0.0417])
+    L2_quad = np.array([4.21e-02, 1.81e-02, 1.01e-02, 4.44e-03, 2.49e-03, 1.10e-03])
+    H1_quad = np.array([2.16e-01, 9.70e-02, 5.48e-02, 2.44e-02, 1.37e-02, 6.12e-03])
 
-    h_fem = np.array([0.45, 0.30, 0.20, 0.14])
-    L2_fem = np.array([3.5e-3, 1.5e-3, 6.8e-4, 3.2e-4])
-    H1_fem = np.array([8.0e-2, 5.3e-2, 3.5e-2, 2.5e-2])
+    # FEM Triangle: L2 rate=1.88, H1 rate=0.99
+    h_fem = np.array([0.2500, 0.1667, 0.1250, 0.0833, 0.0625, 0.0417])
+    L2_fem = np.array([4.10e-02, 2.03e-02, 1.19e-02, 5.52e-03, 3.15e-03, 1.42e-03])
+    H1_fem = np.array([9.07e-01, 6.10e-01, 4.59e-01, 3.06e-01, 2.30e-01, 1.53e-01])
 
     ax.loglog(h_vor, L2_vor, "o-", color=CS_COLOR, ms=5, lw=1.8, label="VEM Voronoi $L^2$")
     ax.loglog(h_vor, H1_vor, "s--", color=CS_COLOR, ms=5, lw=1.2, label="VEM Voronoi $H^1$")
@@ -283,13 +286,13 @@ def fig04_convergence():
     ax.loglog(h_fem, H1_fem, "s--", color=DS_COLOR, ms=5, lw=1.2, label="FEM Tri $H^1$")
 
     # Reference slopes
-    h_ref = np.array([0.1, 0.5])
-    c2 = 5e-3
+    h_ref = np.array([0.03, 0.3])
+    c2 = 1.5
     ax.loglog(h_ref, c2 * h_ref**2, "k:", lw=0.7, alpha=0.5)
-    ax.text(0.35, c2 * 0.35**2 * 1.3, "$O(h^2)$", fontsize=7, color="k", alpha=0.6)
-    c1 = 0.15
+    ax.text(0.15, c2 * 0.15**2 * 1.5, "$O(h^2)$", fontsize=7, color="k", alpha=0.6)
+    c1 = 3.0
     ax.loglog(h_ref, c1 * h_ref**1, "k-.", lw=0.7, alpha=0.5)
-    ax.text(0.35, c1 * 0.35 * 1.3, "$O(h^1)$", fontsize=7, color="k", alpha=0.6)
+    ax.text(0.15, c1 * 0.15 * 1.5, "$O(h^1)$", fontsize=7, color="k", alpha=0.6)
 
     ax.set_xlabel("$h$ (mesh size)")
     ax.set_ylabel("Error")
@@ -428,12 +431,15 @@ def fig06_p1_vs_p2():
     """P1 vs P2 convergence comparison."""
     fig, ax = plt.subplots(figsize=(SC_W, SC_W * 0.85))
 
-    # Data from actual convergence study runs
-    h = np.array([0.45, 0.30, 0.20, 0.14])
-    L2_p1 = np.array([2.1e-3, 7.8e-4, 2.5e-4, 7.5e-5])
-    L2_p2 = np.array([1.3e-3, 4.5e-4, 1.3e-4, 3.6e-5])
-    H1_p1 = np.array([6.5e-2, 3.8e-2, 2.4e-2, 1.6e-2])
-    H1_p2 = np.array([5.5e-2, 3.0e-2, 1.8e-2, 1.1e-2])
+    # Data from vem_p2_elasticity.py convergence_p2_vs_p1() (2026-03-15)
+    # n_cells: 10, 20, 40, 80 → h ~ 1/sqrt(n_cells)
+    h = 1.0 / np.sqrt(np.array([10, 20, 40, 80]))
+    # P1: L2 rate=1.34, H1 rate=0.83
+    L2_p1 = np.array([1.9446e-01, 1.3296e-01, 9.2464e-02, 4.6832e-02])
+    H1_p1 = np.array([2.0339e-01, 1.9814e-01, 1.3626e-01, 8.8458e-02])
+    # P2: L2 rate=1.41, H1 rate=0.96
+    L2_p2 = np.array([1.8550e-01, 1.0602e-01, 7.9975e-02, 3.9838e-02])
+    H1_p2 = np.array([1.2746e-01, 1.2244e-01, 8.2221e-02, 4.8221e-02])
 
     ax.loglog(h, L2_p1, "o-", color=CS_COLOR, ms=5, lw=1.8, label="P$_1$ $L^2$")
     ax.loglog(h, L2_p2, "s-", color=DS_COLOR, ms=5, lw=1.8, label="P$_2$ $L^2$")
