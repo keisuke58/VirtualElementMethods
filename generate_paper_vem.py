@@ -107,9 +107,10 @@ def fig01_pipeline():
     axes[1].text(1.2, -0.02, "Input", fontsize=6, ha="center", color="#666", fontstyle="italic")
     axes[1].text(4.5, -0.02, "Step 1", fontsize=6, ha="center", color="#2171b5", fontweight="bold")
     axes[1].text(8.2, -0.02, "Step 2", fontsize=6, ha="center", color="#2171b5", fontweight="bold")
-    # per-colony DI annotation
-    axes[1].text(4.5, 0.93, "per-colony DI assignment",
-                 fontsize=6.5, ha="center", color="#e08214", fontstyle="italic")
+    # per-colony DI annotation — above the box, no overlap
+    axes[1].annotate("per-colony DI", xy=(4.5, 0.88), xytext=(4.5, 1.08),
+                     fontsize=6.5, ha="center", color="#e08214", fontweight="bold",
+                     arrowprops=dict(arrowstyle="->", color="#e08214", lw=0.8))
 
     fig.tight_layout(h_pad=0.8)
     fig.savefig(str(SAVE_DIR / "fig01_pipeline.pdf"))
@@ -166,16 +167,18 @@ def fig02_vem_schematic():
 
     # (c) Stiffness decomposition
     ax = axes[2]
-    ax.set_xlim(0, 4)
-    ax.set_ylim(0, 2)
+    ax.set_xlim(0, 4.5)
+    ax.set_ylim(-0.2, 2.2)
     ax.axis("off")
-    ax.text(0.2, 1.4, "$\\mathbf{K}^E = \\mathbf{K}^E_\\pi + \\mathbf{K}^E_{\\mathrm{stab}}$",
+    ax.text(0.2, 1.6, "$\\mathbf{K}^E = \\mathbf{K}^E_\\pi + \\mathbf{K}^E_{\\mathrm{stab}}$",
             fontsize=12, fontweight="bold", color=BLACK)
-    ax.text(0.2, 0.9, "consistency", fontsize=8, color=CS_COLOR)
-    ax.text(0.2, 0.6, "$\\mathbf{K}_\\pi = (\\Pi^\\nabla)^T \\tilde{\\mathbf{C}}\\, \\Pi^\\nabla$",
+    # Consistency (left column)
+    ax.text(0.2, 1.0, "consistency:", fontsize=7.5, color=CS_COLOR, fontstyle="italic")
+    ax.text(0.2, 0.5, "$\\mathbf{K}_\\pi = (\\Pi^\\nabla)^T \\tilde{\\mathbf{C}}\\, \\Pi^\\nabla$",
             fontsize=9, color=CS_COLOR)
-    ax.text(2.2, 0.9, "stability", fontsize=8, color=DS_COLOR)
-    ax.text(2.2, 0.6, "$\\mathbf{K}_{\\mathrm{stab}} = \\alpha_s |E| (\\mathbf{I} - \\Pi \\mathbf{D})^2$",
+    # Stability (right column, with clear gap)
+    ax.text(2.5, 1.0, "stability:", fontsize=7.5, color=DS_COLOR, fontstyle="italic")
+    ax.text(2.5, 0.5, "$\\mathbf{K}_{\\mathrm{stab}} = \\alpha_s |E| (\\mathbf{I}{-}\\Pi \\mathbf{D})^2$",
             fontsize=8, color=DS_COLOR)
     ax.set_title("(c) Stiffness decomposition", fontsize=9, fontweight="bold")
 
@@ -194,7 +197,7 @@ def fig03_constitutive():
     from vem_phase_field import compute_E_from_DI, compute_Gc
     from vem_viscoelastic import sls_params_from_di
 
-    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.30))
+    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.35))
 
     DI = np.linspace(0, 1, 200)
     E = compute_E_from_DI(DI)
@@ -207,18 +210,19 @@ def fig03_constitutive():
     ax.fill_between(DI, E, alpha=0.1, color=CS_COLOR)
     # Literature data points
     ax.errorbar(0.15, 900, yerr=200, fmt="^", color=ACCENT, ms=5, capsize=3,
-                label="Pattem 2018 (low sucrose)")
+                label="Pattem 2018 (low suc.)")
     ax.errorbar(0.80, 55, yerr=25, fmt="v", color=DS_COLOR, ms=5, capsize=3,
-                label="Pattem 2018 (high sucrose)")
+                label="Pattem 2018 (high suc.)")
     ax.errorbar(0.50, 380, yerr=100, fmt="s", color=DH_COLOR, ms=5, capsize=3,
-                label="Southampton thesis")
+                label="S'ton thesis")
     ax.errorbar(0.55, 160, yerr=40, fmt="D", color="#7570b3", ms=4, capsize=3,
                 label="Gloag 2019")
     ax.set_xlabel("DI")
     ax.set_ylabel("$E$ [Pa]")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1200)
-    ax.legend(fontsize=5.5, loc="upper right")
+    ax.legend(fontsize=5, loc="upper right", framealpha=0.9,
+              edgecolor="#ccc", handletextpad=0.3, borderpad=0.3)
     ax.set_title("(a) $E(\\mathrm{DI})$", fontweight="bold")
     ax.grid(alpha=0.2)
 
@@ -250,11 +254,12 @@ def fig03_constitutive():
     ax.set_xlim(0, 1)
     lines1, labels1 = ax.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(lines1 + lines2, labels1 + labels2, fontsize=7, loc="center right")
+    ax.legend(lines1 + lines2, labels1 + labels2, fontsize=6, loc="upper right",
+              framealpha=0.9, edgecolor="#ccc")
     ax.set_title("(c) SLS parameters", fontweight="bold")
     ax.grid(alpha=0.2)
 
-    fig.tight_layout()
+    fig.tight_layout(w_pad=2.5)
     fig.savefig(str(SAVE_DIR / "fig03_constitutive.pdf"))
     fig.savefig(str(SAVE_DIR / "fig03_constitutive.png"))
     plt.close(fig)
@@ -295,15 +300,18 @@ def fig04_convergence():
     h_ref = np.array([0.03, 0.3])
     c2 = 1.5
     ax.loglog(h_ref, c2 * h_ref**2, "k:", lw=0.7, alpha=0.5)
-    ax.text(0.15, c2 * 0.15**2 * 1.5, "$O(h^2)$", fontsize=7, color="k", alpha=0.6)
+    ax.text(0.08, c2 * 0.08**2 * 2.0, "$O(h^2)$", fontsize=7, color="k", alpha=0.6,
+            rotation=35, va="bottom")
     c1 = 3.0
     ax.loglog(h_ref, c1 * h_ref**1, "k-.", lw=0.7, alpha=0.5)
-    ax.text(0.15, c1 * 0.15 * 1.5, "$O(h^1)$", fontsize=7, color="k", alpha=0.6)
+    ax.text(0.08, c1 * 0.08 * 1.8, "$O(h^1)$", fontsize=7, color="k", alpha=0.6,
+            rotation=20, va="bottom")
 
     ax.set_xlabel("$h$ (mesh size)")
     ax.set_ylabel("Error")
     ax.set_title("$h$-convergence: VEM vs FEM", fontweight="bold")
-    ax.legend(fontsize=6, ncol=2, loc="lower right")
+    ax.legend(fontsize=5.5, ncol=3, loc="lower right",
+              framealpha=0.9, edgecolor="#ccc")
     ax.grid(alpha=0.2, which="both")
 
     fig.tight_layout()
@@ -359,16 +367,16 @@ def fig05_vevem_validation():
     ax.plot(t_array, sig_ana, "k-", lw=2, label="Analytical")
     ax.plot(t_array, sig_vem, "o", color=CS_COLOR, ms=3, mew=0, label="VEM 2D (64 cells)")
     ax.axhline(E_inf * fac * eps_0, color="#999", ls=":", lw=0.8)
-    ax.text(t_array[-1] * 0.7, E_inf * fac * eps_0 + 0.1, "$E_\\infty \\varepsilon_0/(1{-}\\nu^2)$",
-            fontsize=7, color="#666")
+    ax.text(t_array[-1] * 0.55, E_inf * fac * eps_0 + 0.3, "$E_\\infty \\varepsilon_0/(1{-}\\nu^2)$",
+            fontsize=6, color="#666")
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("$\\sigma_{yy}$ [Pa]")
     ax.set_title("(a) 2D VE-VEM validation", fontweight="bold")
-    ax.legend(fontsize=7)
+    ax.legend(fontsize=7, loc="upper right")
     ax.grid(alpha=0.2)
 
     rel_err_2d = np.max(np.abs(sig_vem - sig_ana) / np.abs(sig_ana))
-    ax.text(0.05, 0.05, f"max rel. error = {rel_err_2d:.1e}",
+    ax.text(0.55, 0.05, f"max rel. error = {rel_err_2d:.1e}",
             transform=ax.transAxes, fontsize=7, fontstyle="italic",
             bbox=dict(boxstyle="round", fc="lightyellow", alpha=0.8))
 
@@ -512,18 +520,18 @@ def fig07_neohookean():
     bc_dofs = np.concatenate([2 * bottom, 2 * bottom + 1])
     bc_vals = np.zeros(len(bc_dofs))
 
-    lf = 1.5
+    lf = 0.8
     l_dofs = np.concatenate([2 * top, 2 * top + 1])
     l_vals = np.concatenate([
         np.full(len(top), lf / max(len(top), 1)),
-        np.full(len(top), -lf * 0.3 / max(len(top), 1)),
+        np.full(len(top), -lf * 0.5 / max(len(top), 1)),
     ])
 
     u_lin = vem_elasticity(verts, elems, E_field, nu, bc_dofs, bc_vals, l_dofs, l_vals)
     u_nl, _ = vem_nonlinear(verts, elems, E_field, nu, bc_dofs, bc_vals,
                             l_dofs, l_vals, n_load_steps=8, verbose=False)
 
-    scale = 15.0
+    scale = 8.0
 
     def _draw_mesh(ax, verts_def, elems, facecolor, edgecolor, lw=0.6, alpha=0.3):
         patches = [MplPolygon(verts_def[el.astype(int)], closed=True) for el in elems]
@@ -531,34 +539,41 @@ def fig07_neohookean():
                              linewidth=lw, alpha=alpha)
         ax.add_collection(pc)
 
+    # Compute limits from all deformed configs
+    deformed_lin = verts + scale * np.column_stack([u_lin[0::2], u_lin[1::2]])
+    deformed_nl = verts + scale * np.column_stack([u_nl[0::2], u_nl[1::2]])
+    all_x = np.concatenate([verts[:, 0], deformed_lin[:, 0], deformed_nl[:, 0]])
+    all_y = np.concatenate([verts[:, 1], deformed_lin[:, 1], deformed_nl[:, 1]])
+    pad = 0.15
+    xlims = (all_x.min() - pad, all_x.max() + pad)
+    ylims = (all_y.min() - pad, all_y.max() + pad)
+
     # (a) Reference mesh
     ax = axes[0]
     _draw_mesh(ax, verts, elems, "#f0f0f0", "#333", lw=0.8, alpha=0.6)
     ax.set_aspect("equal")
-    ax.set_xlim(xmin - 0.3, xmax + 0.3)
-    ax.set_ylim(ymin - 0.5, ymax + 0.5)
+    ax.set_xlim(*xlims)
+    ax.set_ylim(*ylims)
     ax.set_title("(a) Reference", fontweight="bold")
     ax.tick_params(labelsize=6)
 
     # (b) Linear deformation
     ax = axes[1]
-    deformed_lin = verts + scale * np.column_stack([u_lin[0::2], u_lin[1::2]])
-    _draw_mesh(ax, verts, elems, "#f0f0f0", "#ccc", lw=0.3, alpha=0.3)
-    _draw_mesh(ax, deformed_lin, elems, CS_COLOR, CS_COLOR, lw=0.8, alpha=0.25)
+    _draw_mesh(ax, verts, elems, "#f0f0f0", "#ccc", lw=0.3, alpha=0.2)
+    _draw_mesh(ax, deformed_lin, elems, CS_COLOR, CS_COLOR, lw=0.8, alpha=0.3)
     ax.set_aspect("equal")
-    ax.set_xlim(xmin - 0.3, xmax + 0.3)
-    ax.set_ylim(ymin - 0.5, ymax + 0.5)
+    ax.set_xlim(*xlims)
+    ax.set_ylim(*ylims)
     ax.set_title(f"(b) Linear ($\\times${scale:.0f})", fontweight="bold")
     ax.tick_params(labelsize=6)
 
     # (c) Neo-Hookean deformation
     ax = axes[2]
-    deformed_nl = verts + scale * np.column_stack([u_nl[0::2], u_nl[1::2]])
-    _draw_mesh(ax, verts, elems, "#f0f0f0", "#ccc", lw=0.3, alpha=0.3)
-    _draw_mesh(ax, deformed_nl, elems, DS_COLOR, DS_COLOR, lw=0.8, alpha=0.25)
+    _draw_mesh(ax, verts, elems, "#f0f0f0", "#ccc", lw=0.3, alpha=0.2)
+    _draw_mesh(ax, deformed_nl, elems, DS_COLOR, DS_COLOR, lw=0.8, alpha=0.3)
     ax.set_aspect("equal")
-    ax.set_xlim(xmin - 0.3, xmax + 0.3)
-    ax.set_ylim(ymin - 0.5, ymax + 0.5)
+    ax.set_xlim(*xlims)
+    ax.set_ylim(*ylims)
     ax.set_title(f"(c) Neo-Hookean ($\\times${scale:.0f})", fontweight="bold")
     ax.tick_params(labelsize=6)
 
@@ -582,7 +597,11 @@ def fig08_phase_field():
     from vem_growth_coupled import make_biofilm_voronoi
     from vem_phase_field import PhaseFieldVEM, compute_Gc, compute_E_from_DI
 
-    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.38))
+    fig = plt.figure(figsize=(DC_W, DC_W * 0.33))
+    gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.05], hspace=0.40, wspace=0.15)
+    axes = [fig.add_subplot(gs[0, i]) for i in range(3)]
+    # horizontal colorbar spanning all 3 columns
+    cax = fig.add_subplot(gs[1, :])
 
     rng = np.random.default_rng(42)
     domain = (0, 2, 0, 1)
@@ -638,7 +657,7 @@ def fig08_phase_field():
     failure = next((i for i, d in enumerate(d_maxs) if d > 0.95), len(d_maxs)-1)
     mid = onset + (failure - onset) // 2
     show_indices = [onset, mid, min(failure, len(snapshots)-1)]
-    titles = ["(a) Pre-crack", "(b) Crack propagation", "(c) Full failure"]
+    titles = ["(a) Pre-crack", "(b) Propagation", "(c) Failure"]
 
     for ax, si, title in zip(axes, show_indices, titles):
         snap = snapshots[si]
@@ -651,11 +670,11 @@ def fig08_phase_field():
         ax.set_xlim(xmin - 0.05, xmax + 0.05)
         ax.set_ylim(ymin - 0.05, ymax + 0.05)
         ax.set_aspect("equal")
-        ax.set_title(f"{title} ($d_{{\\max}}$={snap['d_max']:.2f})", fontsize=9, fontweight="bold")
+        ax.set_title(f"{title}\n$d_{{\\max}}$={snap['d_max']:.2f}", fontsize=8, fontweight="bold")
         ax.tick_params(labelsize=6)
 
-    fig.colorbar(pc, ax=axes.tolist(), label="Damage $d$", shrink=0.8, pad=0.02)
-    fig.tight_layout()
+    cbar = fig.colorbar(pc, cax=cax, orientation="horizontal", label="Damage $d$")
+    cbar.ax.tick_params(labelsize=6)
     fig.savefig(str(SAVE_DIR / "fig08_phase_field.pdf"))
     fig.savefig(str(SAVE_DIR / "fig08_phase_field.png"))
     plt.close(fig)
@@ -683,8 +702,8 @@ def fig09_adaptive():
     ax2 = ax.twinx()
     ax2.plot(levels, d_max, "k--o", ms=5, lw=1.5, label="$d_{\\max}$")
     ax2.set_ylabel("$d_{\\max}$")
-    ax2.set_ylim(0, 1.15)
-    ax2.legend(fontsize=7, loc="center right")
+    ax2.set_ylim(0, 1.25)
+    ax2.legend(fontsize=7, loc="upper left")
 
     ax.set_xticks(levels)
     ax.set_xticklabels([f"Level {l}" for l in levels])
@@ -846,9 +865,13 @@ def fig12_di_gradient():
     _, sigma_hist, _ = vem_viscoelastic_sls(
         vertices, elements, DI_field, nu, bc_dofs, bc_vals, t_array)
 
-    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.38))
-    titles = [f"(a) $t=0$", f"(b) $t=\\bar{{\\tau}}={tau_mean:.0f}$ s",
-              f"(c) $t=3\\bar{{\\tau}}={3*tau_mean:.0f}$ s"]
+    fig = plt.figure(figsize=(DC_W, DC_W * 0.40))
+    gs = fig.add_gridspec(1, 4, width_ratios=[1, 1, 1, 0.05], wspace=0.15)
+    axes = [fig.add_subplot(gs[0, i]) for i in range(3)]
+    cax = fig.add_subplot(gs[0, 3])
+
+    titles = [f"(a) $t=0$", f"(b) $t=\\bar{{\\tau}}$={tau_mean:.0f} s",
+              f"(c) $t=3\\bar{{\\tau}}$={3*tau_mean:.0f} s"]
 
     vmin = sigma_hist[:, :, 1].min()
     vmax = sigma_hist[:, :, 1].max()
@@ -861,18 +884,20 @@ def fig12_di_gradient():
         pc.set_clim(vmin, vmax)
         ax.add_collection(pc)
         ax.set_xlim(-0.05, 1.05)
-        ax.set_ylim(-0.05, 1.05)
+        ax.set_ylim(-0.12, 1.05)
         ax.set_aspect("equal")
-        ax.set_title(title, fontsize=9, fontweight="bold")
+        ax.set_title(title, fontsize=8, fontweight="bold")
         ax.tick_params(labelsize=6)
         # DI gradient arrow
         if ti == 0:
-            ax.annotate("", xy=(0.9, -0.03), xytext=(0.1, -0.03),
-                        arrowprops=dict(arrowstyle="->", color="k", lw=1))
-            ax.text(0.5, -0.08, "DI: 0.1 → 0.8", fontsize=6, ha="center")
+            ax.annotate("", xy=(0.9, -0.05), xytext=(0.1, -0.05),
+                        arrowprops=dict(arrowstyle="->", color="k", lw=1),
+                        annotation_clip=False)
+            ax.text(0.5, -0.10, "DI: 0.1 $\\rightarrow$ 0.8", fontsize=6, ha="center")
 
-    fig.colorbar(pc, ax=axes.tolist(), label="$\\sigma_{yy}$ [Pa]", shrink=0.8, pad=0.02)
-    fig.tight_layout()
+    cbar = fig.colorbar(pc, cax=cax, label="$\\sigma_{yy}$ [Pa]")
+    cbar.ax.tick_params(labelsize=6)
+    fig.subplots_adjust(left=0.04, right=0.93, bottom=0.08, top=0.90, wspace=0.15)
     fig.savefig(str(SAVE_DIR / "fig12_di_gradient.pdf"))
     fig.savefig(str(SAVE_DIR / "fig12_di_gradient.png"))
     plt.close(fig)
@@ -890,7 +915,18 @@ def fig13_confocal():
         solve_confocal_vem,
     )
 
-    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.38))
+    # 2-row layout: top = 3 equal-aspect panels (2:1 domain), bottom = horizontal colorbars
+    fig = plt.figure(figsize=(DC_W, DC_W * 0.33))
+    gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.05], hspace=0.45, wspace=0.20)
+    ax_a = fig.add_subplot(gs[0, 0])
+    ax_b = fig.add_subplot(gs[0, 1])
+    ax_c = fig.add_subplot(gs[0, 2])
+    cax_b = fig.add_subplot(gs[1, 1])
+    cax_c = fig.add_subplot(gs[1, 2])
+    # hide unused bottom-left cell
+    ax_dummy = fig.add_subplot(gs[1, 0])
+    ax_dummy.set_visible(False)
+    axes = [ax_a, ax_b, ax_c]
 
     try:
         nx_img, ny_img = 256, 128
@@ -915,8 +951,8 @@ def fig13_confocal():
 
         u = solve_confocal_vem(vertices, elements, E_field, nu=0.35, Lx=Lx, Ly=Ly)
 
-        # (a) Composite fluorescence image
-        ax = axes[0]
+        # (a) Composite fluorescence image — show in μm coordinates
+        ax = ax_a
         composite = np.zeros((ny_img, nx_img, 3))
         species_colors = [(0.2, 0.6, 1.0), (1.0, 0.4, 0.1), (0.2, 0.8, 0.2),
                           (0.8, 0.2, 0.8), (1.0, 0.8, 0.0)]
@@ -926,42 +962,50 @@ def fig13_confocal():
             for ci in range(3):
                 composite[:, :, ci] += ch_img * species_colors[ch][ci]
         composite = np.clip(composite / composite.max(), 0, 1)
-        ax.imshow(composite, origin="lower")
-        ax.set_title("(a) Synthetic confocal", fontsize=9, fontweight="bold")
+        ax.imshow(composite, origin="lower", extent=[0, Lx, 0, Ly], aspect="equal")
+        ax.set_xlabel("$x$ [$\\mu$m]", fontsize=7)
+        ax.set_ylabel("$y$ [$\\mu$m]", fontsize=7)
+        ax.set_title("(a) Synthetic confocal", fontsize=8, fontweight="bold")
         ax.tick_params(labelsize=6)
 
         # (b) Voronoi mesh with DI
-        ax = axes[1]
+        ax = ax_b
         patches = [MplPolygon(vertices[el.astype(int)], closed=True) for el in elements]
-        pc = PatchCollection(patches, cmap="RdYlBu_r", edgecolor="k", linewidth=0.3)
+        pc = PatchCollection(patches, cmap="RdYlBu_r", edgecolor="k", linewidth=0.4)
         pc.set_array(DI_field)
         pc.set_clim(0, 1)
         ax.add_collection(pc)
-        xmin_v, xmax_v = vertices[:, 0].min(), vertices[:, 0].max()
-        ymin_v, ymax_v = vertices[:, 1].min(), vertices[:, 1].max()
-        ax.set_xlim(xmin_v - 2, xmax_v + 2)
-        ax.set_ylim(ymin_v - 2, ymax_v + 2)
+        ax.set_xlim(-2, Lx + 2)
+        ax.set_ylim(-2, Ly + 2)
         ax.set_aspect("equal")
-        fig.colorbar(pc, ax=ax, label="DI", shrink=0.7)
-        ax.set_title("(b) Voronoi + DI", fontsize=9, fontweight="bold")
+        ax.set_xlabel("$x$ [$\\mu$m]", fontsize=7)
+        ax.set_yticklabels([])
         ax.tick_params(labelsize=6)
+        cbar_b = fig.colorbar(pc, cax=cax_b, orientation="horizontal")
+        cbar_b.set_label("DI", fontsize=7)
+        cbar_b.ax.tick_params(labelsize=5)
+        ax.set_title("(b) Voronoi + DI", fontsize=8, fontweight="bold")
 
-        # (c) Displacement magnitude
-        ax = axes[2]
+        # (c) Displacement magnitude — convert to μm
+        ax = ax_c
         ux, uy = u[0::2], u[1::2]
         u_mag_per_cell = np.array([
             np.mean(np.sqrt(ux[el.astype(int)]**2 + uy[el.astype(int)]**2))
-            for el in elements])
+            for el in elements]) * 1e6  # m → μm
         patches2 = [MplPolygon(vertices[el.astype(int)], closed=True) for el in elements]
-        pc2 = PatchCollection(patches2, cmap="viridis", edgecolor="k", linewidth=0.3)
+        pc2 = PatchCollection(patches2, cmap="viridis", edgecolor="k", linewidth=0.4)
         pc2.set_array(u_mag_per_cell)
         ax.add_collection(pc2)
-        ax.set_xlim(xmin_v - 2, xmax_v + 2)
-        ax.set_ylim(ymin_v - 2, ymax_v + 2)
+        ax.set_xlim(-2, Lx + 2)
+        ax.set_ylim(-2, Ly + 2)
         ax.set_aspect("equal")
-        fig.colorbar(pc2, ax=ax, label="$|\\mathbf{u}|$ [$\\mu$m]", shrink=0.7)
-        ax.set_title("(c) Displacement $|\\mathbf{u}|$", fontsize=9, fontweight="bold")
+        ax.set_xlabel("$x$ [$\\mu$m]", fontsize=7)
+        ax.set_yticklabels([])
         ax.tick_params(labelsize=6)
+        cbar_c = fig.colorbar(pc2, cax=cax_c, orientation="horizontal")
+        cbar_c.set_label("$|\\mathbf{u}|$ [$\\mu$m]", fontsize=7)
+        cbar_c.ax.tick_params(labelsize=5)
+        ax.set_title("(c) Displacement $|\\mathbf{u}|$", fontsize=8, fontweight="bold")
 
     except Exception as e:
         import traceback
@@ -969,8 +1013,6 @@ def fig13_confocal():
         for ax in axes:
             ax.text(0.5, 0.5, f"Error: {e}", transform=ax.transAxes,
                     ha="center", fontsize=8, color="red")
-
-    fig.tight_layout()
     fig.savefig(str(SAVE_DIR / "fig13_confocal.pdf"))
     fig.savefig(str(SAVE_DIR / "fig13_confocal.png"))
     plt.close(fig)
@@ -1029,11 +1071,11 @@ def fig14_relaxation():
         ax.axvline(tau, color=c, ls=":", lw=0.6, alpha=0.4)
         ax.text(tau + 1, sig_vem[0] * 0.95, f"$\\tau$={tau:.0f}s", fontsize=6, color=c)
 
-        # Relaxation percentage
+        # Relaxation percentage — place inside the curve, not at the edge
         relax_pct = (1 - sig_vem[-1] / sig_vem[0]) * 100
-        ax.annotate(f"{relax_pct:.0f}% relax", xy=(t_array[-1], sig_vem[-1]),
-                    xytext=(-5, 5), textcoords="offset points",
-                    fontsize=6, color=c, fontweight="bold")
+        mid_idx = len(t_array) // 2
+        ax.text(t_array[mid_idx], sig_vem[mid_idx] * 1.08,
+                f"{relax_pct:.0f}%", fontsize=6, color=c, fontweight="bold", ha="center")
 
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("$\\sigma_{yy}$ [Pa]")
@@ -1042,9 +1084,9 @@ def fig14_relaxation():
     ax.grid(alpha=0.2)
     ax.set_xlim(0, 120)
 
-    ax.annotate("Solid = VEM, Dashed = analytical", xy=(0.02, 0.02),
-                xycoords="axes fraction", fontsize=6, fontstyle="italic",
-                bbox=dict(boxstyle="round,pad=0.2", fc="lightyellow", alpha=0.8))
+    ax.text(0.02, 0.15, "Solid: VEM\nDashed: analytical",
+            transform=ax.transAxes, fontsize=6, fontstyle="italic",
+            bbox=dict(boxstyle="round,pad=0.3", fc="lightyellow", alpha=0.9))
 
     fig.tight_layout()
     fig.savefig(str(SAVE_DIR / "fig14_relaxation.pdf"))
