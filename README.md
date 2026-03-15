@@ -26,8 +26,12 @@ VirtualElementMethods/
 ├── vem_nonlinear.py            # ★ Neo-Hookean hyperelasticity + Newton-Raphson
 ├── vem_phase_field.py          # ★ Phase-field fracture (Aldakheel 2018)
 ├── vem_adaptive_fracture.py    # ★ Adaptive h-refinement + phase-field crack
+├── vem_p2_elasticity.py         # ★ P₂ VEM (2nd-order, vertex+midpoint DOFs)
 ├── vem_czm.py                  # ★ Cohesive Zone Model (tooth-biofilm interface)
-├── vem_spacetime.py            # Space-Time VEM (SLS viscoelastic)
+├── vem_viscoelastic.py          # ★ VE-VEM: SLS viscoelastic + Simo 1987
+├── vem_viscoelastic_growth.py  # ★ VE-VEM × Growth-coupled (Hamilton ODE + time-evolving SLS)
+├── vem_3d_viscoelastic.py      # ★ 3D VE-VEM: polyhedral SLS viscoelastic
+├── vem_spacetime.py            # Space-Time VEM (SLS viscoelastic prototype)
 ├── vem_growth_coupled.py       # Growth-Coupled VEM (Hamilton ODE + VEM)
 ├── vem_confocal_pipeline.py    # Confocal → VEM pipeline
 ├── vem_error_estimator.py      # A posteriori error + adaptive refinement
@@ -38,13 +42,15 @@ VirtualElementMethods/
 ├── vem_3d_confocal.py          # 3D confocal → VEM
 ├── process_heine_fish.py       # Heine 2025 FISH → VEM (real data)
 │
-├── tests/                      # 70+ pytest tests
+├── tests/                      # 120+ pytest tests
 │   ├── test_vem_poisson.py         (6 tests)
 │   ├── test_vem_elasticity.py      (9 tests)
 │   ├── test_vem_3d.py              (15 tests)
 │   ├── test_vem_spacetime.py       (4 tests)
 │   ├── test_vem_growth.py          (12 tests)
-│   └── test_vem_error_estimator.py (12 tests)
+│   ├── test_vem_error_estimator.py (12 tests)
+│   ├── test_vem_viscoelastic.py    (25 tests)
+│   └── test_vem_p2.py             (23 tests)
 ├── heine_extracted/            # FISH images from Heine 2025 Fig 3B
 └── results/                    # Pipeline outputs + demo figures
 ```
@@ -58,8 +64,8 @@ VirtualElementMethods/
 | Step | 内容 | 難易度 | Impact | Status |
 |------|------|--------|--------|--------|
 | **A1** | **Neo-Hookean VEM** — 大変形超弾性 (biofilm は軟体, ε > 10%) | 中 | 高 | **Done** ✓ |
-| **A2** | **P₂ VEM** — 応力精度向上 (BC角 30%→5%), 辺中点 DOF | 中 | 中 | Planned |
-| **A3** | **VE-VEM** — SLS 粘弾性 + VEM (space-time prototype の実用化) | 高 | 高 | Prototype |
+| **A2** | **P₂ VEM** — 2nd-order, vertex+edge midpoint DOFs, analytical strain energy | 中 | 中 | **Done** ✓ |
+| **A3** | **VE-VEM** — SLS 粘弾性 + Simo 1987 exponential integrator | 高 | 高 | **Done** ✓ |
 
 ### Track B: 破壊・Phase-field VEM → バイオフィルム剥離
 
@@ -93,6 +99,8 @@ VirtualElementMethods/
 | `vem_czm.py` | **Cohesive Zone Model** | Bilinear TSL, DI→σ_max, tooth-biofilm interface debonding |
 | `vem_3d.py` | 3D elasticity on polyhedra | 12 poly basis, patch test 1e-19 |
 | `vem_3d_advanced.py` | 3D Voronoi + VTK | Sparse solver, convergence rate 1.80 |
+| `vem_viscoelastic.py` | **2D VE-VEM** | SLS + Simo 1987, DI→SLS params, machine precision |
+| `vem_3d_viscoelastic.py` | **3D VE-VEM** | Polyhedral SLS viscoelastic, machine precision |
 
 ### Growth-Coupled
 
@@ -100,6 +108,7 @@ VirtualElementMethods/
 |--------|-------------|--------------|
 | `vem_growth_coupled.py` | Hamilton ODE + VEM | 5-species replicator, cell division, two-way coupling |
 | `vem_spacetime.py` | Space-Time VEM | Anisotropic (x,t) Voronoi, SLS viscoelastic |
+| `vem_viscoelastic_growth.py` | **VE-VEM × Growth** | Hamilton ODE → time-evolving DI → SLS → VEM |
 | `vem_confocal_pipeline.py` | Confocal → VEM | 5ch fluorescence → colony detection → Voronoi → VEM |
 
 ### Analysis Tools
@@ -137,6 +146,27 @@ VirtualElementMethods/
 - DI→σ_max: 10 Pa (commensal) → 1 Pa (dysbiotic), mixed-mode coupling
 - Progressive debonding: center (weak) debonds first at LF=7.8
 - Irreversible damage with load redistribution to intact interface
+
+### A2: P₂ VEM (2nd-order)
+
+- DOFs: vertex + edge midpoint (4·n_v per element, vs 2·n_v for P₁)
+- P1-compatible basis: 3 rigid body + 3 linear strain + 6 quadratic modes
+- Analytical strain energy via sub-triangulation Gauss quadrature (PSD guaranteed)
+- Volume correction for div(σ(p_α)) ≠ 0 in quadratic modes
+- Convergence: L² ~1.4, H¹ ~1.0 (P₂ consistently 15-45% better than P₁)
+- Linear solutions captured exactly (error ~10⁻¹⁴)
+- Note: optimal O(h³) L²/O(h²) H¹ rates require internal DOFs (future work)
+
+### A3: VE-VEM (SLS Viscoelastic)
+- Simo 1987 exponential integrator: unconditionally stable, O(dt) accurate
+- Validation: laterally confined step strain, max relative error = **1.3e-15** (machine precision)
+- DI gradient demo: commensal (left) 59.7% relaxation, dysbiotic (right) 75.0% relaxation
+- SLS params: E_inf 70-781 Pa, tau 9-50 s, DI-dependent
+- Per-element C_inf, C_1 matrices + algorithmic tangent C_alg = C_inf + gamma*C_1
+- **3D extension**: polyhedral elements, 12 poly basis, validated to 4.9×10⁻¹⁶
+- **Growth-coupled**: Hamilton ODE → DI(t) → SLS params(t) → VE-VEM time stepping
+  - CS: DI 0.38→0.23, E_inf=913 Pa, τ=41 s (stiffening)
+  - DS: DI 0.40→0.49, E_inf=324 Pa, τ=23 s (softening)
 
 ### h-Convergence (Linear VEM)
 | Method | L² rate | H¹ rate |
@@ -182,6 +212,11 @@ python vem_nonlinear.py                 # Neo-Hookean large deformation
 python vem_phase_field.py               # Phase-field detachment
 python vem_growth_coupled.py            # Growth-coupled simulation
 python vem_confocal_pipeline.py         # Confocal → VEM pipeline
+python vem_viscoelastic.py              # VE-VEM viscoelastic (SLS + Simo 1987)
+python vem_viscoelastic_growth.py       # VE-VEM × Growth-coupled
+python vem_3d_viscoelastic.py           # 3D VE-VEM viscoelastic
+python vem_p2_elasticity.py             # P₂ VEM (2nd-order)
+python generate_grand_showcase.py       # Grand overview: all 8 modules in 1 figure
 ```
 
 ## References

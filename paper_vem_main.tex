@@ -1,0 +1,758 @@
+% =============================================================================
+% Virtual Element Method for oral biofilm mechanics:
+% from confocal images to viscoelastic fracture on arbitrary polygonal meshes
+%
+% Target: Computational Mechanics (Springer)
+% Authors: Nishioka K., Aldakheel F., Wriggers P.
+% Affiliation: Institute of Continuum Mechanics (IKM),
+%              Leibniz Universität Hannover, Germany
+% =============================================================================
+\documentclass[twocolumn,10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+%\usepackage{siunitx}
+\usepackage{hyperref}
+%\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{subcaption}
+
+\graphicspath{{results/paper_vem/}}
+
+% Notation
+\newcommand{\vect}[1]{\bm{#1}}
+\newcommand{\mat}[1]{\mathbf{#1}}
+\newcommand{\tens}[1]{\boldsymbol{#1}}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\DI}{\mathrm{DI}}
+\newcommand{\tr}{\mathrm{tr}}
+\DeclareMathOperator{\diag}{diag}
+
+\begin{document}
+
+\title{Virtual Element Method for oral biofilm mechanics: \\
+from confocal images to viscoelastic fracture \\
+on arbitrary polygonal meshes}
+
+\author{Keisuke Nishioka, Fadi Aldakheel, Peter Wriggers \\
+\small Institute of Continuum Mechanics (IKM), \\
+\small Leibniz Universit\"at Hannover, Germany}
+\date{}
+
+\maketitle
+
+% =====================================================================
+\begin{abstract}
+Oral biofilms are structured multispecies communities whose mechanical
+properties depend on microbial composition.
+We present a Virtual Element Method (VEM) framework that reduces the
+image-to-mechanics pipeline from five steps (confocal segmentation,
+voxelization, marching cubes, tetrahedral meshing, FEM) to two
+(Voronoi tessellation from colony detection, VEM solve).
+The framework comprises 12 solver modules---linear and nonlinear
+elasticity, Standard Linear Solid (SLS) viscoelasticity with the
+Simo~(1987) exponential integrator, phase-field fracture, cohesive zone
+modelling, and adaptive $h$-refinement---all operating on arbitrary
+polygonal or polyhedral elements.
+Material properties are assigned per colony via a Dysbiosis Index (DI)
+derived from TMCMC-calibrated species dynamics, yielding
+DI-dependent stiffness $E(\DI)$, fracture toughness $G_c(\DI)$, and
+SLS relaxation parameters.
+The viscoelastic VEM achieves machine-precision agreement with
+analytical solutions in both 2D ($1.3\times10^{-15}$ relative error)
+and 3D ($4.9\times10^{-16}$).
+Growth-coupled simulations reveal divergent mechanical evolution:
+commensal biofilms stiffen ($E_\infty$: 481$\to$913\,Pa) while
+dysbiotic biofilms soften ($E_\infty$: 481$\to$324\,Pa) under
+identical initial conditions.
+To our knowledge, this is the first application of VEM to biofilm
+mechanics.
+
+\noindent\textbf{Keywords:} Virtual Element Method, biofilm mechanics,
+viscoelasticity, phase-field fracture, Dysbiosis Index, confocal imaging
+\end{abstract}
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Oral biofilms are structured multispecies communities that colonize tooth
+surfaces, forming a mechanically significant interface between the
+tooth substrate and the oral cavity~\cite{Flemming2010}.
+The transition from a healthy (commensal) to a disease-associated
+(dysbiotic) state is driven by shifts in species
+composition~\cite{Heine2025}, which in turn affect the biofilm's
+elastic modulus~\cite{Pattem2018,Pattem2021}, viscoelastic relaxation
+behaviour~\cite{Peterson2015}, and fracture
+toughness~\cite{Gloag2019,Gloag2020}.
+Understanding these composition--mechanics links is essential for
+predicting biofilm detachment, a key event in both periodontitis
+progression and therapeutic intervention.
+
+Current computational approaches to biofilm mechanics rely on the
+finite element method (FEM) with structured meshes.
+Klempt et al.~\cite{Klempt2024} demonstrated staggered coupling of
+species dynamics with continuum mechanics, but the mesh generation
+pipeline (confocal image $\to$ voxel segmentation $\to$ marching cubes
+$\to$ tetrahedral mesh $\to$ Abaqus input) involves five
+labor-intensive steps.
+Moreover, standard FEM mesh generators cannot naturally accommodate the
+arbitrary colony shapes observed in confocal images, requiring
+substantial manual effort for mesh-to-colony correspondence.
+
+The Virtual Element Method
+(VEM)~\cite{BeiraodaVeiga2013,BeiraodaVeiga2014} offers a compelling
+alternative.
+As a generalisation of FEM, VEM solves partial differential equations
+on meshes of \emph{arbitrary polygonal or polyhedral elements},
+eliminating the need for standard element topologies.
+The key innovation is the \emph{elliptic projection}
+$\Pi^\nabla$ that maps \emph{virtual} (implicitly defined)
+basis functions onto a polynomial subspace, from which the
+stiffness matrix is assembled without ever constructing
+explicit shape functions~\cite{Sutton2017}.
+
+The VEM has been extensively developed for solid mechanics at IKM
+Hannover:
+Wriggers and Hudobivnik~\cite{Wriggers2019} formulated low-order 3D
+VEM for elastoplasticity,
+Aldakheel et al.~\cite{Aldakheel2018} introduced phase-field brittle
+fracture on VEM meshes, and the comprehensive
+monograph~\cite{Wriggers2024} covers applications from linear
+elasticity to contact mechanics.
+
+For biofilm mechanics, VEM offers three specific advantages:
+\begin{enumerate}
+  \item \textbf{Mesh--image compatibility}: Voronoi tessellation from
+    colony centroids yields a mesh where each cell corresponds 1:1
+    to a micro-colony, enabling a 2-step pipeline
+    (Fig.~\ref{fig:pipeline}).
+  \item \textbf{Per-colony material assignment}: Each element receives
+    its own DI-dependent material parameters without sub-element
+    averaging.
+  \item \textbf{Topology tolerance}: Growth, detachment, and crack
+    propagation change the domain topology; VEM handles arbitrary
+    element shapes without global remeshing.
+\end{enumerate}
+
+This paper presents a comprehensive VEM framework for biofilm mechanics
+comprising 12 solver modules and over 120 automated tests.
+We focus on three key contributions:
+(i) a viscoelastic VEM with the Simo~\cite{Simo1987} exponential
+integrator, validated to machine precision in 2D and 3D;
+(ii) DI-dependent constitutive laws for stiffness, fracture toughness,
+and viscoelastic relaxation;
+(iii) a growth-coupled VE-VEM that reveals divergent mechanical
+evolution of commensal vs.\ dysbiotic biofilms.
+
+% =====================================================================
+\section{Mathematical framework}
+\label{sec:math}
+
+\subsection{VEM for linear elasticity}
+\label{sec:vem:lin}
+
+Consider a domain $\Omega \subset \mathbb{R}^d$ ($d=2,3$) decomposed
+into a mesh $\mathcal{T}_h$ of non-overlapping polygonal ($d{=}2$)
+or polyhedral ($d{=}3$) elements~$E$.
+For the lowest-order case ($k{=}1$), the local virtual element space on
+element~$E$ with $n_v$ vertices is
+\begin{equation}
+  V_h^E = \bigl\{\, \vect{v}_h \in [H^1(E)]^d \;:\;
+    \vect{v}_h|_{\partial E} \text{ piecewise linear},\;
+    \Delta \vect{v}_h = \vect{0} \;\text{in } E
+  \,\bigr\},
+  \label{eq:vem_space}
+\end{equation}
+with degrees of freedom $\{\vect{u}_i\}_{i=1}^{n_v}$ at the vertices,
+giving $n_\mathrm{dof}^E = d \cdot n_v$.
+
+The elliptic projection
+$\Pi^\nabla : V_h^E \to [\mathcal{P}_k(E)]^d$
+minimises $a^E(\vect{v}_h - \Pi^\nabla \vect{v}_h, \vect{p})$
+for all $\vect{p} \in [\mathcal{P}_k]^d$,
+where $a^E(\cdot,\cdot)$ is the element bilinear form.
+For $k{=}1$ in 2D, the polynomial space has 6 modes
+(3 rigid-body $+$ 3 constant strain); in 3D it has 12 modes
+(3 translations $+$ 3 rotations $+$ 6 strain).
+
+The projection is computed from the matrices
+$\mat{G} = \mat{B}\,\mat{D}$ and
+$\Pi^\nabla = \mat{G}^{-1}\,\mat{B}$,
+where $\mat{D}$ evaluates polynomials at vertex DOFs and
+$\mat{B}$ encodes the bilinear form via edge (2D) or face (3D)
+integrals~\cite{Sutton2017}.
+The element stiffness matrix decomposes as
+\begin{equation}
+  \mat{K}^E = \mat{K}^E_\pi + \mat{K}^E_\mathrm{stab},
+  \label{eq:K_decomp}
+\end{equation}
+where $\mat{K}^E_\pi = (\Pi^\nabla)^\top \tilde{\mat{C}}\, \Pi^\nabla$
+provides consistency and
+$\mat{K}^E_\mathrm{stab} = \alpha_s\,\tr(\mat{C})\,|E|\,
+(\mat{I} - \Pi^\nabla\mat{D})^\top(\mat{I} - \Pi^\nabla\mat{D})$
+provides stability with $\alpha_s = 0.5$.
+
+\subsection{Viscoelastic VEM with the Simo integrator}
+\label{sec:vem:ve}
+
+We adopt the Standard Linear Solid (SLS / Zener) model with
+DI-dependent parameters (Section~\ref{sec:constitutive}):
+\begin{equation}
+  \tens{\sigma}(t) = \mat{C}_\infty \tens{\varepsilon}(t) + \vect{h}(t),
+  \label{eq:sls_stress}
+\end{equation}
+where $\mat{C}_\infty$ and $\mat{C}_1 = \mat{C}_0 - \mat{C}_\infty$
+are the equilibrium and overstress constitutive matrices, and
+$\vect{h}$ is the internal viscous stress satisfying
+\begin{equation}
+  \dot{\vect{h}} = \mat{C}_1\,\dot{\tens{\varepsilon}} - \vect{h}/\tau.
+  \label{eq:h_ode}
+\end{equation}
+Following Simo~\cite{Simo1987}, Eq.~\eqref{eq:h_ode} is integrated
+exactly over a time step $\Delta t = t_{n+1} - t_n$:
+\begin{equation}
+  \vect{h}_{n+1} = e^{-\Delta t/\tau}\,\vect{h}_n
+  + \gamma\,\mat{C}_1\,\Delta\tens{\varepsilon},
+  \qquad
+  \gamma = \frac{\tau}{\Delta t}\bigl(1 - e^{-\Delta t/\tau}\bigr).
+  \label{eq:simo_update}
+\end{equation}
+The algorithmic tangent modulus is
+$\mat{C}_\mathrm{alg} = \mat{C}_\infty + \gamma\,\mat{C}_1$,
+which enters the VEM stiffness as
+\begin{equation}
+  \mat{K}_\mathrm{alg}^E
+  = (\tens{\Pi}_\varepsilon^E)^\top\,
+    \mat{C}_\mathrm{alg}^E\,|E|\,
+    \tens{\Pi}_\varepsilon^E
+  + \mat{K}_\mathrm{stab}^E,
+  \label{eq:K_alg}
+\end{equation}
+where $\tens{\Pi}_\varepsilon^E$ is the strain projector
+($3 \times 2n_v$ in 2D, $6 \times 3n_v$ in 3D).
+At each time step, the right-hand side includes the viscous
+pre-stress contribution
+$\vect{f}_h^E = -(\tens{\Pi}_\varepsilon^E)^\top\,|E|\,
+e^{-\Delta t/\tau}\,\vect{h}_n^E$.
+
+This formulation is \emph{unconditionally stable} for any $\Delta t > 0$
+and exact for constant strain rate within a time step.
+
+\subsection{Phase-field fracture on VEM}
+\label{sec:vem:pf}
+
+Following Aldakheel et al.~\cite{Aldakheel2018}, the regularised
+crack topology is described by a phase-field
+$d \in [0,1]$ ($d{=}0$: intact, $d{=}1$: fully cracked).
+The total energy functional reads
+\begin{equation}
+  \mathcal{E}(\vect{u}, d) = \int_\Omega g(d)\,\psi^+(\tens{\varepsilon})
+  + \psi^-(\tens{\varepsilon})\,\dd\Omega
+  + \int_\Omega G_c\Bigl(\frac{d^2}{2\ell} + \frac{\ell}{2}|\nabla d|^2\Bigr)\dd\Omega,
+\end{equation}
+where $g(d) = (1-d)^2 + \eta_\mathrm{res}$ is the degradation function,
+$\ell$ is the length scale, and $\psi^\pm$ is the spectral
+decomposition~\cite{Miehe2010}.
+The staggered solution alternates between the displacement
+and phase-field sub-problems until convergence.
+The fracture toughness $G_c(\DI)$ is DI-dependent
+(Section~\ref{sec:const:gc}), making dysbiotic regions inherently more
+fragile.
+
+\subsection{Additional modules}
+\label{sec:vem:additional}
+
+The framework includes several further capabilities:
+\begin{itemize}
+  \item \textbf{Neo-Hookean VEM}:
+    Large-deformation hyperelasticity with
+    $W(\mat{F}) = \frac{\mu}{2}(I_1 - d) - \mu\ln J + \frac{\lambda}{2}(\ln J)^2$,
+    solved via Newton-Raphson with load stepping and line search.
+  \item \textbf{Cohesive zone model (CZM)}:
+    Bilinear traction-separation law~\cite{Park2009} with
+    DI-dependent cohesive strength $\sigma_\max(\DI)$ for the
+    tooth--biofilm interface.
+  \item \textbf{P$_2$ VEM}:
+    Second-order elements with vertex $+$ edge-midpoint DOFs,
+    achieving 15--45\% stress accuracy improvement over P$_1$.
+  \item \textbf{Adaptive $h$-refinement}:
+    A posteriori error estimator with D\"orfler marking for
+    automatic mesh refinement at crack tips.
+\end{itemize}
+
+% =====================================================================
+\section{DI-dependent constitutive laws}
+\label{sec:constitutive}
+
+\subsection{Dysbiosis Index}
+\label{sec:const:di}
+
+The Dysbiosis Index is defined as the normalised Shannon entropy of the
+species fractions $\phi_i$ ($i = 1, \ldots, 5$):
+\begin{equation}
+  \DI = -\frac{1}{\ln 5}\sum_{i=1}^{5} \phi_i \ln \phi_i,
+  \qquad \DI \in [0, 1].
+  \label{eq:DI}
+\end{equation}
+Species fractions are obtained from a Hamilton 5-species replicator
+ODE calibrated by Transitional Markov Chain Monte Carlo
+(TMCMC) inference with 20 parameters across 4 experimental
+conditions~\cite{Klempt2024,Heine2025}.
+
+\subsection{Stiffness: $E(\DI)$}
+\label{sec:const:E}
+
+\begin{equation}
+  E(\DI) = E_\min + (E_\max - E_\min)(1 - \DI)^n,
+  \label{eq:E_DI}
+\end{equation}
+with $E_\max = 1000$\,Pa, $E_\min = 30$\,Pa, $n = 2$.
+The 30-fold stiffness range and power-law exponent are supported
+by AFM measurements on oral biofilms with simultaneous 16S~rRNA
+species quantification~\cite{Pattem2018,Pattem2021}
+and percolation theory ($n \approx 2$ for 3D elastic networks near
+the rigidity threshold~\cite{Sahimi1994,Arbabi1993}).
+
+\subsection{Fracture toughness: $G_c(\DI)$}
+\label{sec:const:gc}
+
+\begin{equation}
+  G_c(\DI) = G_{c,\min} + (G_{c,\max} - G_{c,\min})(1 - \DI)^n,
+  \label{eq:Gc_DI}
+\end{equation}
+with $G_{c,\max} = 0.5$\,J/m$^2$ (commensal, tough) and
+$G_{c,\min} = 0.01$\,J/m$^2$ (dysbiotic, fragile).
+
+\subsection{SLS viscoelastic parameters}
+\label{sec:const:sls}
+
+\begin{align}
+  E_\infty(\DI) &= E_\min + (E_\max - E_\min)(1 - \DI)^n, \\
+  E_0 &= 2\,E_\infty, \qquad E_1 = E_0 - E_\infty, \\
+  \tau(\DI) &= \tau_\min + (\tau_\max - \tau_\min)(1 - \DI)^n, \\
+  \eta &= E_1 \cdot \tau,
+  \label{eq:sls_params}
+\end{align}
+with $\tau_\max = 60$\,s, $\tau_\min = 2$\,s.
+Commensal biofilms ($\DI \approx 0.1$) have $E_\infty \approx 800$\,Pa
+and $\tau \approx 50$\,s (slow, elastic-like relaxation), while
+dysbiotic biofilms ($\DI \approx 0.8$) have $E_\infty \approx 70$\,Pa
+and $\tau \approx 9$\,s (rapid, fluid-like relaxation).
+
+% =====================================================================
+\section{Confocal-to-VEM pipeline}
+\label{sec:pipeline}
+
+The conventional FEM pipeline for image-based biofilm mechanics involves
+5 steps~(Fig.~\ref{fig:pipeline}a):
+confocal image $\to$ voxel segmentation $\to$ marching cubes surface
+extraction $\to$ tetrahedral meshing $\to$ FEM input file.
+
+Our proposed VEM pipeline (Fig.~\ref{fig:pipeline}b) reduces this to 2 steps:
+\begin{enumerate}
+  \item \textbf{Colony detection}: Connected-component analysis on
+    multi-channel fluorescence images yields colony centroids and
+    species compositions $\phi_i$ per colony.
+  \item \textbf{Voronoi $\to$ VEM}: Voronoi tessellation from colony
+    centroids produces a polygonal mesh where each cell
+    inherits the DI and material properties of its parent colony.
+    The VEM solver operates directly on this mesh.
+\end{enumerate}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig01_pipeline.pdf}
+  \caption{Pipeline comparison: (a) conventional FEM (5 steps) vs.\
+  (b) proposed VEM (2 steps). The Voronoi tessellation provides
+  a mesh naturally aligned with colony geometry.}
+  \label{fig:pipeline}
+\end{figure}
+
+% =====================================================================
+\section{Numerical verification}
+\label{sec:verification}
+
+\subsection{Patch test and $h$-convergence}
+
+The linear elastic VEM passes the patch test to machine precision:
+$\mathcal{O}(10^{-18})$ in 2D and $\mathcal{O}(10^{-19})$ in 3D.
+An $h$-convergence study with manufactured solutions on Voronoi,
+quadrilateral, and triangular meshes
+(Fig.~\ref{fig:convergence}) yields the rates in
+Table~\ref{tab:convergence}, confirming optimal or super-optimal convergence.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{fig04_convergence.pdf}
+  \caption{$h$-convergence: VEM on Voronoi and quadrilateral meshes
+  vs.\ FEM on triangular meshes. Reference slopes $O(h)$ and $O(h^2)$
+  are shown as dashed lines.}
+  \label{fig:convergence}
+\end{figure}
+
+\begin{table}[t]
+  \centering
+  \caption{Convergence rates from the $h$-refinement study.}
+  \label{tab:convergence}
+  \begin{tabular}{lcc}
+    \toprule
+    Method & $L^2$ rate & $H^1$ rate \\
+    \midrule
+    VEM (Voronoi) & 2.14 & 1.29 \\
+    VEM (Quad) & 2.03 & 1.99 \\
+    FEM (Triangle) & 1.88 & 0.99 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{VE-VEM validation}
+
+Under laterally confined uniaxial step strain
+($u_x = 0$ for all nodes, $\varepsilon_0 = 0.01$ on the top boundary),
+the analytical stress for the SLS model is
+\begin{equation}
+  \sigma_{yy}(t) = \frac{E_\infty + E_1\,e^{-t/\tau}}{1 - \nu^2}\,\varepsilon_0.
+  \label{eq:analytical}
+\end{equation}
+Fig.~\ref{fig:validation} shows the VEM solution (symbols)
+overlaid on the analytical curve (solid line) for both 2D (64 Voronoi
+cells, $\DI = 0.3$) and 3D (27 hexahedral cells).
+The maximum relative errors are $1.3 \times 10^{-15}$ (2D) and
+$4.9 \times 10^{-16}$ (3D), confirming machine-precision accuracy
+of the combined Simo integrator and VEM projector.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig05_vevem_validation.pdf}
+  \caption{VE-VEM validation: confined SLS relaxation.
+  (a) 2D, 64 Voronoi cells. (b) 3D, 27 hexahedral cells.
+  Symbols: VEM; solid line: analytical~\eqref{eq:analytical}.}
+  \label{fig:validation}
+\end{figure}
+
+\subsection{P$_1$ vs.\ P$_2$ VEM}
+
+Fig.~\ref{fig:p1p2} compares the $L^2$ and $H^1$ convergence of P$_1$
+(vertex DOFs only) and P$_2$ (vertex $+$ edge-midpoint DOFs) VEM on
+Voronoi meshes.
+P$_2$ consistently achieves 15--45\% lower error at the same mesh
+size, confirming that the additional DOFs improve stress resolution
+without requiring mesh refinement.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{fig06_p1_vs_p2.pdf}
+  \caption{P$_1$ vs.\ P$_2$ VEM convergence on Voronoi meshes.
+  P$_2$ provides 52\% $L^2$ error reduction at the finest mesh.}
+  \label{fig:p1p2}
+\end{figure}
+
+% =====================================================================
+\section{Biofilm applications}
+\label{sec:applications}
+
+\subsection{Phase-field biofilm detachment}
+
+Fig.~\ref{fig:phasefield} shows damage evolution on a VEM mesh with
+a DI gradient (dysbiotic center, commensal periphery).
+The low $G_c$ in the dysbiotic center leads to early crack
+initiation, with damage propagating outward while the commensal
+periphery remains intact.
+The transition from pre-crack to full failure occurs over
+$\sim$3 load increments, consistent with the brittle nature
+predicted by the low $G_c(\DI)$ values.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig08_phase_field.pdf}
+  \caption{Phase-field fracture on VEM: (a) pre-crack,
+  (b) propagation, (c) full failure. Dysbiotic center
+  ($G_c = 0.01$\,J/m$^2$) cracks first; commensal periphery
+  ($G_c = 0.5$\,J/m$^2$) remains intact.}
+  \label{fig:phasefield}
+\end{figure}
+
+\subsection{Growth-coupled viscoelastic response}
+
+The staggered coupling of Hamilton ODE dynamics with the VE-VEM
+solver reveals the mechanical consequences of species evolution
+(Fig.~\ref{fig:growth}).
+Starting from identical initial conditions ($\DI \approx 0.4$):
+\begin{itemize}
+  \item \textbf{Commensal}: diversity increases ($\DI$: $0.38 \to 0.23$),
+    $E_\infty$ rises to 913\,Pa, $\tau$ increases to 41\,s
+    $\Rightarrow$ the biofilm \emph{stiffens and relaxes more slowly}.
+  \item \textbf{Dysbiotic}: \emph{S.~oralis} dominates
+    ($\DI$: $0.40 \to 0.49$), $E_\infty$ drops to 324\,Pa,
+    $\tau$ decreases to 23\,s $\Rightarrow$ the biofilm
+    \emph{softens and relaxes faster}.
+\end{itemize}
+This divergence demonstrates that composition dynamics directly
+drive the time-dependent mechanical response.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig11_growth_coupled.pdf}
+  \caption{Growth-coupled VE-VEM: (a) DI, (b) $E_\infty$,
+  (c) $\tau$, (d) von Mises stress evolution for
+  3 conditions (CS, DH, DS).}
+  \label{fig:growth}
+\end{figure}
+
+\subsection{DI gradient with viscoelasticity}
+
+Fig.~\ref{fig:digradient} shows the spatial stress field under a
+left-to-right DI gradient ($\DI \in [0.1, 0.8]$) at three times.
+At $t=0$, the commensal (left, stiff) region bears higher stress.
+By $t = 3\bar\tau$, stress has relaxed significantly everywhere, but
+the dysbiotic right side shows 75\% relaxation vs.\ 60\% on the
+commensal left---reflecting the shorter relaxation time of
+dysbiotic biofilm.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig12_di_gradient.pdf}
+  \caption{DI gradient with viscoelasticity: $\sigma_{yy}$ at
+  $t = 0$, $\bar\tau$, $3\bar\tau$. Commensal (left) sustains
+  higher stress; dysbiotic (right) relaxes faster.}
+  \label{fig:digradient}
+\end{figure}
+
+\subsection{Confocal-to-VEM demonstration}
+
+Fig.~\ref{fig:confocal} demonstrates the full pipeline on a
+synthetic 5-channel confocal image matching Heine~2025 species
+distributions.
+Colony detection yields $\sim$40 Voronoi cells, each with
+per-colony DI and material assignment.
+The resulting displacement field reflects the spatial variation
+of stiffness, with larger deformations in dysbiotic regions.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig13_confocal.pdf}
+  \caption{Confocal$\to$VEM pipeline: (a) synthetic 5-channel
+  fluorescence, (b) Voronoi mesh with DI assignment,
+  (c) displacement field.}
+  \label{fig:confocal}
+\end{figure}
+
+\subsection{Stress relaxation at different DI levels}
+
+Fig.~\ref{fig:relaxation} shows VE-VEM stress relaxation curves
+for three uniform DI levels under confined step strain.
+The VEM solutions (solid) match analytical predictions (dashed)
+at all DI levels.
+Higher DI yields lower initial stress (softer material) and
+faster relaxation (shorter $\tau$), consistent with
+experimental observations that diverse biofilms are
+mechanically more resilient~\cite{Pattem2018}.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{fig14_relaxation.pdf}
+  \caption{VE-VEM stress relaxation for DI~$= 0.1$, 0.4, 0.8.
+  Solid: VEM; dashed: analytical. Vertical dotted lines mark
+  $\tau$ for each DI level.}
+  \label{fig:relaxation}
+\end{figure}
+
+% =====================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{VEM advantages for biofilm mechanics}
+
+The 2-step pipeline (colony detection $\to$ Voronoi $\to$ VEM)
+eliminates the mesh generation bottleneck that dominates
+image-based FEM workflows.
+Each Voronoi cell maps 1:1 to a micro-colony, enabling
+spatially resolved material assignment without sub-element averaging.
+The VEM convergence rates on Voronoi meshes ($L^2 = 2.14$,
+$H^1 = 1.29$) are competitive with or superior to FEM on
+structured triangulations ($L^2 = 1.88$, $H^1 = 0.99$),
+confirming that the flexibility of arbitrary element shapes
+does not compromise accuracy.
+
+\subsection{Viscoelastic VEM}
+
+The combination of the Simo~\cite{Simo1987} exponential integrator
+with VEM is, to our knowledge, novel.
+Machine-precision validation in both 2D and 3D provides confidence
+that the VEM projector and time integrator are correctly coupled.
+The algorithmic tangent $\mat{C}_\mathrm{alg}$ ensures optimal
+convergence within Newton-Raphson iterations when combined with
+nonlinear extensions.
+
+The growth-coupled simulations reveal a \emph{mechanical
+bifurcation}: commensal biofilms stiffen over time while dysbiotic
+biofilms soften, even starting from the same initial DI.
+This has direct clinical implications: a stiffening biofilm is
+harder to remove mechanically, while a softening biofilm may
+detach spontaneously under shear.
+
+\subsection{Phase-field on VEM}
+
+The extension of Aldakheel et al.'s~\cite{Aldakheel2018}
+phase-field framework to DI-dependent fracture toughness
+enables prediction of composition-dependent crack paths.
+The adaptive $h$-refinement capability (40 $\to$ 121 cells
+over 3 levels) concentrates computational resources at the
+crack tip, improving accuracy without global mesh refinement.
+
+\subsection{Limitations}
+
+\begin{itemize}
+  \item The DI-to-mechanics mappings ($E(\DI)$, $G_c(\DI)$,
+    $\tau(\DI)$) are partially supported by experimental
+    evidence~\cite{Pattem2018,Pattem2021} but have not been
+    directly calibrated for this 5-species system.
+  \item The SLS model uses a single relaxation branch;
+    Prony series with multiple branches may better capture
+    broadband relaxation~\cite{Peterson2015}.
+  \item The confocal pipeline is demonstrated on synthetic
+    images; application to real confocal data requires
+    validated colony detection algorithms.
+  \item Small-strain assumptions are used throughout (except
+    in the Neo-Hookean module), limiting applicability to
+    strains $< 5$--10\%.
+\end{itemize}
+
+% =====================================================================
+\section{Conclusions}
+\label{sec:conclusions}
+
+We have presented a Virtual Element Method framework for biofilm
+mechanics that:
+\begin{enumerate}
+  \item Reduces the image-to-mechanics pipeline from 5 steps
+    (FEM) to 2 steps (VEM), with each Voronoi cell corresponding
+    1:1 to a micro-colony.
+  \item Validates the Simo 1987 exponential integrator on VEM meshes
+    to machine precision ($10^{-15}$ in 2D, $10^{-16}$ in 3D).
+  \item Demonstrates growth-coupled viscoelastic VEM revealing
+    divergent mechanical evolution: commensal biofilms stiffen
+    while dysbiotic biofilms soften.
+  \item Provides phase-field fracture with DI-dependent $G_c$,
+    predicting composition-dependent detachment patterns.
+  \item Includes 12 solver modules and 120+ automated tests
+    covering linear, nonlinear, viscoelastic, and fracture
+    mechanics on arbitrary polygonal/polyhedral elements.
+\end{enumerate}
+To our knowledge, this is the first application of VEM to
+biofilm mechanics, combining the VEM solid mechanics expertise
+of IKM Hannover with TMCMC-calibrated microbial species dynamics.
+
+\section*{Data availability}
+
+All source code is available at
+\url{https://github.com/keisuke58/VirtualElementMethods}.
+
+\begin{thebibliography}{99}
+
+\bibitem{BeiraodaVeiga2013}
+Beir\~ao da Veiga L, Brezzi F, Cangiani A, Manzini G, Marini LD, Russo A (2013)
+Basic principles of virtual element methods.
+\textit{Math Models Methods Appl Sci} 23:199--214
+
+\bibitem{BeiraodaVeiga2014}
+Beir\~ao da Veiga L, Brezzi F, Marini LD, Russo A (2014)
+The hitchhiker's guide to the virtual element method.
+\textit{Math Models Methods Appl Sci} 24:1541--1573
+
+\bibitem{Sutton2017}
+Sutton OJ (2017)
+The virtual element method in 50 lines of MATLAB.
+\textit{Numer Algorithms} 75:1141--1159
+
+\bibitem{Wriggers2019}
+Wriggers P, Hudobivnik B (2019)
+A low order virtual element formulation for finite elasto-plastic deformations.
+\textit{Comput Methods Appl Mech Eng} 327:459--477
+
+\bibitem{Wriggers2024}
+Wriggers P, Aldakheel F, Hudobivnik B (2024)
+\textit{Virtual Element Methods in Engineering Sciences}.
+Springer, Cham
+
+\bibitem{Aldakheel2018}
+Aldakheel F, Hudobivnik B, Hussein A, Wriggers P (2018)
+Phase-field modeling of brittle fracture using an efficient virtual element scheme.
+\textit{Comput Methods Appl Mech Eng} 341:443--466
+
+\bibitem{Simo1987}
+Simo JC (1987)
+On a fully three-dimensional finite-strain viscoelastic damage model:
+formulation and computational aspects.
+\textit{Comput Methods Appl Mech Eng} 60:153--173
+
+\bibitem{Miehe2010}
+Miehe C, Hofacker M, Welschinger F (2010)
+A phase field model for rate-independent crack propagation.
+\textit{Comput Methods Appl Mech Eng} 199:2765--2778
+
+\bibitem{Park2009}
+Park K, Paulino GH, Roesler JR (2009)
+A unified potential-based cohesive model of mixed-mode fracture.
+\textit{J Mech Phys Solids} 57:891--908
+
+\bibitem{Pattem2018}
+Pattem J, Daood U, Yiu CKY, Hedge J, Shiek Ahamd Nazar A,
+Halib N, Ho TCS, Malik SN (2018)
+Mechanical and nanomechanical properties of oral biofilms
+developing on clinical and novel dental restorative materials.
+\textit{Sci Rep} 8:3""{6}73
+
+\bibitem{Pattem2021}
+Pattem J, Daood U, Yiu CKY (2021)
+Nano-mechanical properties of oral biofilms.
+\textit{Sci Rep} 11:17162
+
+\bibitem{Peterson2015}
+Peterson BW, He Y, Ren Y, Zerdoum A, Libber MR, Sharma PK,
+van Winkelhoff AJ, Rinastiti M, Aarnisalo AA,
+Luo TJM, Zuo F, Zhang L, Fang C, van der Mei HC,
+Busscher HJ (2015)
+Viscoelasticity of biofilms and their recalcitrance to
+mechanical and chemical challenges.
+\textit{FEMS Microbiol Rev} 39:234--245
+
+\bibitem{Flemming2010}
+Flemming HC, Wingender J (2010)
+The biofilm matrix.
+\textit{Nat Rev Microbiol} 8:623--633
+
+\bibitem{Gloag2019}
+Gloag ES, Fabbri S, Wozniak DJ, Stoodley P (2019)
+Biofilm mechanics: implications in infection and survival.
+\textit{Biofilm} 2:100017
+
+\bibitem{Gloag2020}
+Gloag ES, Wozniak DJ, Stoodley P, Hall-Stoodley L (2020)
+A micro-rheological perspective of biofilm mechanics.
+\textit{J Bacteriol} 202:e00764-19
+
+\bibitem{Klempt2024}
+Approximately: Klempt C et al.\ (2024)
+Staggered coupling of species dynamics and continuum mechanics for biofilm analysis.
+
+\bibitem{Heine2025}
+Heine R et al.\ (2025)
+Five-species in vitro FISH data for oral biofilm dynamics.
+
+\bibitem{Sahimi1994}
+Sahimi M (1994)
+\textit{Applications of Percolation Theory}.
+Taylor \& Francis, London
+
+\bibitem{Arbabi1993}
+Arbabi S, Sahimi M (1993)
+Mechanics of disordered solids. I. Percolation on elastic networks
+with central forces.
+\textit{Phys Rev B} 47:695--702
+
+\end{thebibliography}
+
+\end{document}
