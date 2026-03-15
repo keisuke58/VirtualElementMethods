@@ -375,14 +375,18 @@ def fig05_vevem_validation():
     # --- 3D validation (run actual 3D solver) ---
     ax = axes[1]
     try:
-        from vem_3d_viscoelastic import generate_hex_mesh, vem_3d_viscoelastic_sls
-        verts_3d, elems_3d, bnd_3d = generate_hex_mesh(3)
+        from vem_3d import make_hex_mesh
+        from vem_3d_viscoelastic import vem_3d_viscoelastic_sls
+        verts_3d, elems_3d, faces_3d = make_hex_mesh(nx=3, ny=3, nz=3, perturb=0.0, seed=42)
         n_el_3d = len(elems_3d)
         n_nodes_3d = len(verts_3d)
         DI_3d = np.full(n_el_3d, DI_val)
         params_3d = sls_params_from_di(DI_3d)
+        E_inf_3d = params_3d["E_inf"][0]
+        E_1_3d = params_3d["E_1"][0]
+        tau_3d = params_3d["tau"][0]
 
-        t_3d = np.concatenate([[0.0], np.linspace(tau / 10, 3 * tau, 20)])
+        t_3d = np.concatenate([[0.0], np.linspace(tau_3d / 10, 3 * tau_3d, 20)])
 
         tol3 = 1e-6
         bot3 = np.where(verts_3d[:, 2] < tol3)[0]
@@ -396,16 +400,16 @@ def fig05_vevem_validation():
         bc3_vals = bc3_vals[uid3]
 
         u3, sig3, h3 = vem_3d_viscoelastic_sls(
-            verts_3d, elems_3d, DI_3d, nu, bc3_dofs, bc3_vals, t_3d)
+            verts_3d, elems_3d, faces_3d, DI_3d, nu, bc3_dofs, bc3_vals, t_3d)
 
         # Analytical for 3D confined
-        lam = nu * E_inf / ((1 + nu) * (1 - 2*nu))
-        mu = E_inf / (2 * (1 + nu))
-        C33_inf = lam + 2*mu
-        lam1 = nu * (2*E_inf) / ((1 + nu) * (1 - 2*nu))
-        mu1 = (2*E_inf - E_inf) / (2 * (1 + nu))
-        C33_1 = lam1 + 2*mu1
-        sig_ana_3d = (C33_inf + C33_1 * np.exp(-t_3d / tau)) * eps_0
+        lam_inf = nu * E_inf_3d / ((1 + nu) * (1 - 2*nu))
+        mu_inf = E_inf_3d / (2 * (1 + nu))
+        lam_1 = nu * E_1_3d / ((1 + nu) * (1 - 2*nu))
+        mu_1 = E_1_3d / (2 * (1 + nu))
+        C33_inf = lam_inf + 2*mu_inf
+        C33_1 = lam_1 + 2*mu_1
+        sig_ana_3d = (C33_inf + C33_1 * np.exp(-t_3d / tau_3d)) * eps_0
         sig_vem_3d = sig3[:, :, 2].mean(axis=1)
 
         ax.plot(t_3d, sig_ana_3d, "k-", lw=2, label="Analytical")
@@ -452,12 +456,11 @@ def fig06_p1_vs_p2():
     ax.loglog(h, H1_p1, "o--", color=CS_COLOR, ms=5, lw=1.2, label="P$_1$ $H^1$", alpha=0.7)
     ax.loglog(h, H1_p2, "s--", color=DS_COLOR, ms=5, lw=1.2, label="P$_2$ $H^1$", alpha=0.7)
 
-    # Improvement annotation
+    # Improvement annotation (inside the plot)
     improve = (1 - L2_p2[-1] / L2_p1[-1]) * 100
-    ax.annotate(f"{improve:.0f}% better", xy=(h[-1], L2_p2[-1]),
-                xytext=(h[-1]*1.5, L2_p2[-1]*0.3),
-                arrowprops=dict(arrowstyle="->", color=DS_COLOR, lw=1),
-                fontsize=7, color=DS_COLOR, fontweight="bold")
+    ax.text(0.05, 0.05, f"P$_2$: {improve:.0f}% lower $L^2$ error",
+            transform=ax.transAxes, fontsize=7, color=DS_COLOR, fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=DS_COLOR, alpha=0.8))
 
     ax.set_xlabel("$h$ (mesh size)")
     ax.set_ylabel("Error")
@@ -481,12 +484,12 @@ def fig07_neohookean():
     from vem_elasticity import vem_elasticity
     from vem_nonlinear import vem_nonlinear
 
-    fig, ax = plt.subplots(figsize=(SC_W * 1.3, SC_W * 0.85))
+    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.30))
 
     rng = np.random.default_rng(42)
     domain = (0, 2, 0, 1)
     xmin, xmax, ymin, ymax = domain
-    seeds = rng.uniform([xmin+0.1, ymin+0.1], [xmax-0.1, ymax-0.1], (25, 2))
+    seeds = rng.uniform([xmin+0.1, ymin+0.1], [xmax-0.1, ymax-0.1], (20, 2))
     vertices, elements, bnd, valid_ids = make_biofilm_voronoi(seeds, domain)
 
     used_set = set()
@@ -509,7 +512,7 @@ def fig07_neohookean():
     bc_dofs = np.concatenate([2 * bottom, 2 * bottom + 1])
     bc_vals = np.zeros(len(bc_dofs))
 
-    lf = 3.0
+    lf = 1.5
     l_dofs = np.concatenate([2 * top, 2 * top + 1])
     l_vals = np.concatenate([
         np.full(len(top), lf / max(len(top), 1)),
@@ -520,35 +523,49 @@ def fig07_neohookean():
     u_nl, _ = vem_nonlinear(verts, elems, E_field, nu, bc_dofs, bc_vals,
                             l_dofs, l_vals, n_load_steps=8, verbose=False)
 
-    scale = 30.0
-    # Reference mesh
-    for el in elems:
-        el_int = el.astype(int)
-        poly = verts[el_int]
-        poly_c = np.vstack([poly, poly[0]])
-        ax.plot(poly_c[:, 0], poly_c[:, 1], color="#ccc", linewidth=0.3)
+    scale = 15.0
 
-    for u_vec, color, label, lw in [(u_lin, CS_COLOR, "Linear", 1.0),
-                                     (u_nl, DS_COLOR, "Neo-Hookean", 1.2)]:
-        deformed = verts + scale * np.column_stack([u_vec[0::2], u_vec[1::2]])
-        for el in elems:
-            el_int = el.astype(int)
-            poly = deformed[el_int]
-            poly_c = np.vstack([poly, poly[0]])
-            ax.plot(poly_c[:, 0], poly_c[:, 1], color=color, linewidth=lw, alpha=0.8)
+    def _draw_mesh(ax, verts_def, elems, facecolor, edgecolor, lw=0.6, alpha=0.3):
+        patches = [MplPolygon(verts_def[el.astype(int)], closed=True) for el in elems]
+        pc = PatchCollection(patches, facecolor=facecolor, edgecolor=edgecolor,
+                             linewidth=lw, alpha=alpha)
+        ax.add_collection(pc)
+
+    # (a) Reference mesh
+    ax = axes[0]
+    _draw_mesh(ax, verts, elems, "#f0f0f0", "#333", lw=0.8, alpha=0.6)
+    ax.set_aspect("equal")
+    ax.set_xlim(xmin - 0.3, xmax + 0.3)
+    ax.set_ylim(ymin - 0.5, ymax + 0.5)
+    ax.set_title("(a) Reference", fontweight="bold")
+    ax.tick_params(labelsize=6)
+
+    # (b) Linear deformation
+    ax = axes[1]
+    deformed_lin = verts + scale * np.column_stack([u_lin[0::2], u_lin[1::2]])
+    _draw_mesh(ax, verts, elems, "#f0f0f0", "#ccc", lw=0.3, alpha=0.3)
+    _draw_mesh(ax, deformed_lin, elems, CS_COLOR, CS_COLOR, lw=0.8, alpha=0.25)
+    ax.set_aspect("equal")
+    ax.set_xlim(xmin - 0.3, xmax + 0.3)
+    ax.set_ylim(ymin - 0.5, ymax + 0.5)
+    ax.set_title(f"(b) Linear ($\\times${scale:.0f})", fontweight="bold")
+    ax.tick_params(labelsize=6)
+
+    # (c) Neo-Hookean deformation
+    ax = axes[2]
+    deformed_nl = verts + scale * np.column_stack([u_nl[0::2], u_nl[1::2]])
+    _draw_mesh(ax, verts, elems, "#f0f0f0", "#ccc", lw=0.3, alpha=0.3)
+    _draw_mesh(ax, deformed_nl, elems, DS_COLOR, DS_COLOR, lw=0.8, alpha=0.25)
+    ax.set_aspect("equal")
+    ax.set_xlim(xmin - 0.3, xmax + 0.3)
+    ax.set_ylim(ymin - 0.5, ymax + 0.5)
+    ax.set_title(f"(c) Neo-Hookean ($\\times${scale:.0f})", fontweight="bold")
+    ax.tick_params(labelsize=6)
 
     u_diff = np.max(np.abs(u_nl - u_lin)) / np.max(np.abs(u_lin)) * 100
-    ax.text(0.02, 0.95, f"Displacement difference: {u_diff:.0f}%",
-            transform=ax.transAxes, fontsize=7, fontweight="bold",
-            bbox=dict(boxstyle="round", fc="lightyellow", alpha=0.8), va="top")
-
-    ax.set_aspect("equal")
-    ax.legend([plt.Line2D([0], [0], color=CS_COLOR, lw=2),
-               plt.Line2D([0], [0], color=DS_COLOR, lw=2),
-               plt.Line2D([0], [0], color="#ccc", lw=1)],
-              ["Linear", "Neo-Hookean", f"Reference (x{scale:.0f})"],
-              fontsize=7, loc="lower right")
-    ax.set_title(f"Linear vs Neo-Hookean (deformation $\\times${scale:.0f})", fontweight="bold")
+    axes[2].text(0.98, 0.02, f"$\\Delta u$: {u_diff:.0f}%",
+                 transform=axes[2].transAxes, fontsize=7, fontweight="bold",
+                 ha="right", bbox=dict(boxstyle="round", fc="lightyellow", alpha=0.8))
 
     fig.tight_layout()
     fig.savefig(str(SAVE_DIR / "fig07_neohookean.pdf"))
@@ -565,7 +582,7 @@ def fig08_phase_field():
     from vem_growth_coupled import make_biofilm_voronoi
     from vem_phase_field import PhaseFieldVEM, compute_Gc, compute_E_from_DI
 
-    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.28))
+    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.38))
 
     rng = np.random.default_rng(42)
     domain = (0, 2, 0, 1)
@@ -708,8 +725,9 @@ def fig10_czm():
                        (0.4, "DH (DI=0.4)", DH_COLOR),
                        (0.8, "DS (DI=0.8)", DS_COLOR)]:
         sigma_max = 10.0 * (1 - di)**2 + 1.0
-        delta_c = 0.002 + 0.008 * di
-        delta_f = 2 * 0.5 * (0.5 * (1-di)**2 + 0.01) / sigma_max
+        delta_c = 0.001 + 0.001 * di
+        Gc = 0.03 * (1 - di)**2 + 0.003
+        delta_f = 2 * Gc / sigma_max + delta_c  # ensure area = Gc
 
         traction = np.zeros_like(delta)
         for i, d in enumerate(delta):
@@ -722,6 +740,8 @@ def fig10_czm():
 
         ax.plot(delta * 1000, traction, color=c, lw=2, label=lab)
         ax.fill_between(delta * 1000, traction, alpha=0.08, color=c)
+        # Mark critical separation
+        ax.plot(delta_c * 1000, sigma_max, "o", color=c, ms=4, zorder=5)
 
     ax.set_xlabel("$\\delta$ [mm]")
     ax.set_ylabel("$\\sigma$ [Pa]")
@@ -729,6 +749,7 @@ def fig10_czm():
     ax.legend(fontsize=7)
     ax.grid(alpha=0.2)
     ax.set_xlim(0, 15)
+    ax.set_ylim(0, None)
 
     fig.tight_layout()
     fig.savefig(str(SAVE_DIR / "fig10_czm.pdf"))
@@ -744,7 +765,7 @@ def fig11_growth_coupled():
     """Growth-coupled VE-VEM: 3-condition DI, E, stress evolution."""
     from vem_viscoelastic_growth import ViscoelasticGrowthVEM
 
-    fig, axes = plt.subplots(2, 2, figsize=(DC_W, DC_W * 0.60))
+    fig, axes = plt.subplots(2, 2, figsize=(DC_W, DC_W * 0.75))
 
     conditions = [
         ("commensal_static", "CS", CS_COLOR),
@@ -825,7 +846,7 @@ def fig12_di_gradient():
     _, sigma_hist, _ = vem_viscoelastic_sls(
         vertices, elements, DI_field, nu, bc_dofs, bc_vals, t_array)
 
-    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.28))
+    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.38))
     titles = [f"(a) $t=0$", f"(b) $t=\\bar{{\\tau}}={tau_mean:.0f}$ s",
               f"(c) $t=3\\bar{{\\tau}}={3*tau_mean:.0f}$ s"]
 
@@ -869,7 +890,7 @@ def fig13_confocal():
         solve_confocal_vem,
     )
 
-    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.28))
+    fig, axes = plt.subplots(1, 3, figsize=(DC_W, DC_W * 0.38))
 
     try:
         nx_img, ny_img = 256, 128
@@ -922,7 +943,7 @@ def fig13_confocal():
         ax.set_ylim(ymin_v - 2, ymax_v + 2)
         ax.set_aspect("equal")
         fig.colorbar(pc, ax=ax, label="DI", shrink=0.7)
-        ax.set_title("(b) Voronoi mesh + DI", fontsize=9, fontweight="bold")
+        ax.set_title("(b) Voronoi + DI", fontsize=9, fontweight="bold")
         ax.tick_params(labelsize=6)
 
         # (c) Displacement magnitude
@@ -939,7 +960,7 @@ def fig13_confocal():
         ax.set_ylim(ymin_v - 2, ymax_v + 2)
         ax.set_aspect("equal")
         fig.colorbar(pc2, ax=ax, label="$|\\mathbf{u}|$ [$\\mu$m]", shrink=0.7)
-        ax.set_title("(c) Displacement field", fontsize=9, fontweight="bold")
+        ax.set_title("(c) Displacement $|\\mathbf{u}|$", fontsize=9, fontweight="bold")
         ax.tick_params(labelsize=6)
 
     except Exception as e:
